@@ -84,15 +84,20 @@ async def lifespan(app: FastAPI):
     from mcp.tool_manager import MCPToolManager, Tool
     from memory.conversation_memory import MemoryManager
     from monitor.performance_monitor import PerformanceMonitor
+    from retrieval.embedding import EmbeddingConfig, create_embedding_provider
 
     cfg = _anthropic_cfg()
     logger.info(f"模型: {cfg['model']}  base_url: {cfg.get('base_url', '(官方)')}")
 
-    # 意图识别器（Orchestrator 内部也会创建，这里单独暴露给 Evaluator）
+    embedding_config = EmbeddingConfig.from_env()
+    embedding_provider = create_embedding_provider(embedding_config)
+
+    # 意图识别、知识检索共享同一份显式 Embedding 配置和模型实例。
     recognizer = IntentRecognizer(
         api_key=cfg["api_key"],
         base_url=cfg.get("base_url"),
         model=cfg["model"],
+        embedding_provider=embedding_provider,
     )
 
     # Agent 编排器
@@ -108,6 +113,7 @@ async def lifespan(app: FastAPI):
         api_key=cfg["api_key"],
         base_url=cfg.get("base_url"),
         model=cfg["model"],
+        intent_recognizer=recognizer,
         trace_store=_trace_store,
         default_budget=route_budget,
     )
@@ -134,8 +140,10 @@ async def lifespan(app: FastAPI):
         chroma_port=int(os.getenv("CHROMA_PORT", "8000")),
         chroma_path=os.getenv("CHROMA_PERSIST_DIRECTORY", "/app/data/chroma"),
         chunk_strategy=os.getenv("CHUNK_STRATEGY", "structure_token"),
+        embedding_config=embedding_config,
+        embedding_provider=embedding_provider,
     )
-    logger.info(f"知识库已加载: {kb.doc_count} 个文档片段")
+    logger.info(f"知识库已加载: {kb.doc_count} 个文档片段; embedding={kb.embedding_info}")
 
     def knowledge_fallback(params: Dict[str, Any], context: Optional[Dict[str, Any]], error: str):
         query = params.get("query", "")
@@ -474,7 +482,12 @@ async def search(query: str, top_k: int = 5):
     if _tool_manager is None:
         raise HTTPException(503, "服务未就绪")
     result = await _tool_manager.search_with_rewrite("knowledge_search", query, top_k=top_k)
-    return {"query": query, "results": result.data, "reranked": result.reranked}
+    return {
+        "query": query,
+        "results": result.data,
+        "reranked": result.reranked,
+        "retrieval_diagnostics": result.diagnostics,
+    }
 
 
 class DocInput(BaseModel):
@@ -585,7 +598,11 @@ async def knowledge_stats():
     if tool is None:
         raise HTTPException(503, "知识库未初始化")
     kb = tool.handler.__self__
-    return {"total_chunks": kb.doc_count, "chunk_strategy": kb.chunk_strategy}
+    return {
+        "total_chunks": kb.doc_count,
+        "chunk_strategy": kb.chunk_strategy,
+        "embedding": kb.embedding_info,
+    }
 
 
 @app.post("/eval/run")

@@ -12,7 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONPATH=/app
 
-# curl 用于健康检查；不再需要 gcc/g++（已移除本地 ML 模型）
+# curl 用于健康检查；Embedding 使用 FastEmbed ONNX，无需 gcc/g++。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -24,13 +24,8 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# 预下载 ChromaDB 内置的 ONNX embedding 模型（~79MB），避免运行时下载超时
-RUN mkdir -p /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 && \
-    curl -L --retry 3 --retry-delay 5 -o /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2/onnx.tar.gz \
-    https://chroma-onnx-models.s3.amazonaws.com/all-MiniLM-L6-v2/onnx.tar.gz && \
-    cd /root/.cache/chroma/onnx_models/all-MiniLM-L6-v2 && \
-    tar -xzf onnx.tar.gz && \
-    rm onnx.tar.gz
+# 预下载固定的中文 BGE ONNX 模型，避免应用首次请求时联网。
+RUN python -c "from fastembed import TextEmbedding; list(TextEmbedding(model_name='BAAI/bge-small-zh-v1.5', cache_dir='/root/.cache/fastembed').query_embed(['warmup']))"
 
 # ── 阶段 3：生产镜像 ──────────────────────────────────────────────────────────
 FROM base AS production
@@ -39,7 +34,7 @@ FROM base AS production
 COPY --from=dependencies /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=dependencies /usr/local/bin /usr/local/bin
 # 复制预下载的 ONNX 模型缓存
-COPY --from=dependencies /root/.cache/chroma /home/echomind/.cache/chroma
+COPY --from=dependencies /root/.cache/fastembed /home/echomind/.cache/fastembed
 
 # 复制应用代码
 COPY . .
@@ -52,6 +47,13 @@ RUN useradd -m -u 1000 echomind && \
     chown -R echomind:echomind /app && \
     chown -R echomind:echomind /home/echomind/.cache
 USER echomind
+
+ENV EMBEDDING_PROVIDER=fastembed \
+    EMBEDDING_PROVIDER_VERSION=0.8.0 \
+    EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
+    EMBEDDING_DIMENSIONS=512 \
+    EMBEDDING_DISTANCE=cosine \
+    EMBEDDING_CACHE_DIR=/home/echomind/.cache/fastembed
 
 EXPOSE 8000
 

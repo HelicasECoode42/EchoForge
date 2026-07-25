@@ -43,6 +43,23 @@ class ToolResult:
     cached:         bool = False
     latency_ms:     float = 0.0
     reranked:       bool = False   # 是否经过重排
+    diagnostics:    Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RetrievalPolicy:
+    """Cost/latency guardrails for the rewrite + rerank path.
+
+    Thresholds are intentionally conservative and must be recalibrated when the
+    embedding model or corpus changes.  The embedding fingerprint in the
+    collection makes that dependency observable.
+    """
+
+    rewrite_queries: int = 3
+    min_recall_k: int = 5
+    max_rerank_candidates: int = 12
+    fast_path_min_score: float = 0.60
+    fast_path_min_margin: float = 0.08
 
 
 @dataclass
@@ -131,7 +148,13 @@ class MCPToolManager:
       用户查询 → 查询改写（多角度子查询）→ 并行召回 → 结果重排 → 返回 Top-K
     """
 
-    def __init__(self, api_key: str, base_url: Optional[str] = None, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: Optional[str] = None,
+        model: str = "claude-3-5-sonnet-20241022",
+        retrieval_policy: Optional[RetrievalPolicy] = None,
+    ):
         kwargs: Dict[str, Any] = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
@@ -139,6 +162,7 @@ class MCPToolManager:
         self._model  = model
         self._tools: Dict[str, Tool] = {}
         self._cache: Dict[str, tuple] = {}   # key → (result, expire_at)
+        self._retrieval_policy = retrieval_policy or RetrievalPolicy()
 
     # ── 注册 / 注销 ───────────────────────────────────────────────────────────
 
@@ -284,30 +308,71 @@ class MCPToolManager:
         query: str,
         top_k: int = 5,
         context: Optional[Dict[str, Any]] = None,
+        *,
+        adaptive: bool = True,
     ) -> ToolResult:
         """
         完整的检索优化链路：查询改写 → 并行召回 → 去重 → 重排 → Top-K
 
         这是解决"检索不全、召回不好"的完整方案。
         """
-        # 1. 查询改写：生成多角度子查询
-        sub_queries = await self.rewrite_query(query, n=3)
+        pipeline_started = time.monotonic()
+        policy = self._retrieval_policy
+        recall_k = max(top_k, policy.min_recall_k)
+
+        # 1. 先做一次原始向量检索。高置信度查询直接返回，避免固定支付
+        #    rewrite + rerank 两次 LLM 调用的延迟和 token 成本。
+        initial = await self.call(
+            tool_name,
+            {"query": query, "top_k": recall_k},
+            context,
+            use_cache=True,
+        )
+        if not initial.success or not isinstance(initial.data, list):
+            return initial
+
+        if adaptive and self._is_confident_retrieval(initial.data, top_k, policy):
+            return ToolResult(
+                success=True,
+                data=initial.data[:top_k],
+                tool_name=tool_name,
+                cached=initial.cached,
+                latency_ms=(time.monotonic() - pipeline_started) * 1000,
+                reranked=False,
+                diagnostics={
+                    "path": "vector_fast_path",
+                    "vector_calls": 1,
+                    "rewrite_calls": 0,
+                    "rerank_calls": 0,
+                    "candidate_count": len(initial.data),
+                },
+            )
+
+        # 2. 低置信度查询再生成多角度子查询。
+        sub_queries = await self.rewrite_query(query, n=policy.rewrite_queries)
         logger.info(f"查询改写: {query!r} → {sub_queries}")
 
-        # 2. 并行召回：所有子查询同时检索
-        recall_k = max(top_k, 5)
+        # 3. 原始查询结果已经存在，只并行执行新增子查询。
+        rewritten_queries = [item for item in sub_queries if item != query]
         tasks = [
             self.call(tool_name, {"query": q, "top_k": recall_k}, context, use_cache=True)
-            for q in sub_queries
+            for q in rewritten_queries
         ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        recalled = await asyncio.gather(*tasks, return_exceptions=True)
+        results: List[Any] = [initial, *recalled]
 
-        # 3. 合并去重（按内容哈希去重）
+        # 4. 合并去重。优先使用稳定 chunk_id，避免相同 chunk 因 query 分数
+        #    不同而被 str(item) 哈希误判为多个候选。
         seen, merged = set(), []
         for r in results:
             if isinstance(r, ToolResult) and r.success and isinstance(r.data, list):
                 for item in r.data:
-                    key = hashlib.md5(str(item).encode()).hexdigest()
+                    if isinstance(item, dict):
+                        key = item.get("chunk_id") or hashlib.sha256(
+                            str(item.get("content", "")).encode("utf-8", errors="ignore")
+                        ).hexdigest()
+                    else:
+                        key = hashlib.sha256(str(item).encode("utf-8", errors="ignore")).hexdigest()
                     if key not in seen:
                         seen.add(key)
                         merged.append(item)
@@ -315,9 +380,42 @@ class MCPToolManager:
         if not merged:
             return ToolResult(success=False, data=[], tool_name=tool_name, error="所有子查询均无结果")
 
-        # 4. 重排：用 LLM 对合并结果按相关性打分，取 Top-K
-        reranked = await self._rerank(query, merged, top_k)
-        return ToolResult(success=True, data=reranked, tool_name=tool_name, reranked=True)
+        # 5. 限制送入 LLM 的候选数，直接降低 prompt token 与推理延迟。
+        merged.sort(
+            key=lambda item: float(item.get("score", -1.0)) if isinstance(item, dict) else -1.0,
+            reverse=True,
+        )
+        candidates = merged[:policy.max_rerank_candidates]
+        reranked = await self._rerank(query, candidates, top_k)
+        return ToolResult(
+            success=True,
+            data=reranked,
+            tool_name=tool_name,
+            latency_ms=(time.monotonic() - pipeline_started) * 1000,
+            reranked=True,
+            diagnostics={
+                "path": "rewrite_and_rerank",
+                "vector_calls": 1 + len(rewritten_queries),
+                "rewrite_calls": 1,
+                "rerank_calls": 1,
+                "merged_candidate_count": len(merged),
+                "rerank_candidate_count": len(candidates),
+            },
+        )
+
+    @staticmethod
+    def _is_confident_retrieval(
+        items: List[Any],
+        top_k: int,
+        policy: RetrievalPolicy,
+    ) -> bool:
+        if len(items) < min(top_k, 2):
+            return False
+        if not all(isinstance(item, dict) and isinstance(item.get("score"), (int, float)) for item in items[:2]):
+            return False
+        top_score = float(items[0]["score"])
+        margin = top_score - float(items[1]["score"])
+        return top_score >= policy.fast_path_min_score and margin >= policy.fast_path_min_margin
 
     # ── 结果重排（解决召回不好）──────────────────────────────────────────────
 

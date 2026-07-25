@@ -1,0 +1,29 @@
+{
+  "evaluation_scope": "controlled_high_confidence_retrieval_path",
+  "latency_model": {
+    "vector_call_ms": 3,
+    "rewrite_call_ms": 25,
+    "rerank_call_ms": 35,
+    "note": "Injected deterministic delays; not live Anthropic or production latency."
+  },
+  "quality_guard": "The top chunk id must be identical in baseline and adaptive runs.",
+  "baseline_always_rewrite_rerank": {
+    "iterations": 20,
+    "median_latency_ms": 69.123,
+    "p95_latency_ms": 76.786,
+    "avg_vector_calls": 4,
+    "avg_rewrite_calls": 1,
+    "avg_rerank_calls": 1,
+    "top_result_stability": true
+  },
+  "adaptive_vector_fast_path": {
+    "iterations": 20,
+    "median_latency_ms": 3.467,
+    "p95_latency_ms": 9.89,
+    "avg_vector_calls": 1,
+    "avg_rewrite_calls": 0,
+    "avg_rerank_calls": 0,
+    "top_result_stability": true
+  },
+  "median_latency_reduction": 0.9498
+}
