@@ -1,0 +1,79 @@
+[
+  {
+    "id": "technical_direct_success",
+    "message": "应用登录时报 500 错误",
+    "intent": "technical",
+    "urgency": "low",
+    "agent_outcomes": {"general": [true], "technical": [true]},
+    "expected": {
+      "final_agent": "technical",
+      "success": true,
+      "attempts": 1,
+      "reroutes": 0,
+      "stop_reason": "completed",
+      "escalated": false
+    }
+  },
+  {
+    "id": "billing_failure_falls_back_once",
+    "message": "账单重复扣款",
+    "intent": "billing",
+    "urgency": "low",
+    "agent_outcomes": {"general": [true], "billing": [false]},
+    "expected": {
+      "final_agent": "general",
+      "success": true,
+      "attempts": 2,
+      "reroutes": 1,
+      "stop_reason": "completed",
+      "escalated": false
+    }
+  },
+  {
+    "id": "critical_without_escalation_agent",
+    "message": "紧急，立即转人工",
+    "intent": "escalation",
+    "urgency": "critical",
+    "agent_outcomes": {"general": [true]},
+    "expected": {
+      "final_agent": "general",
+      "success": true,
+      "attempts": 1,
+      "reroutes": 1,
+      "stop_reason": "completed",
+      "escalated": true
+    }
+  },
+  {
+    "id": "reroute_quota_zero",
+    "message": "退款处理失败",
+    "intent": "billing",
+    "urgency": "low",
+    "budget": {"max_attempts": 2, "max_reroutes": 0, "max_total_latency_ms": 15000},
+    "agent_outcomes": {"general": [true], "billing": [false]},
+    "expected": {
+      "final_agent": "billing",
+      "success": false,
+      "attempts": 1,
+      "reroutes": 0,
+      "stop_reason": "reroute_budget_exhausted",
+      "escalated": false
+    }
+  },
+  {
+    "id": "attempt_budget_stops_before_fallback",
+    "message": "无法支付订单",
+    "intent": "billing",
+    "urgency": "low",
+    "budget": {"max_attempts": 1, "max_reroutes": 1, "max_total_latency_ms": 15000},
+    "agent_outcomes": {"general": [true], "billing": [false]},
+    "expected": {
+      "final_agent": "billing",
+      "success": false,
+      "attempts": 1,
+      "reroutes": 0,
+      "stop_reason": "attempt_budget_exhausted",
+      "escalated": false
+    }
+  }
+]

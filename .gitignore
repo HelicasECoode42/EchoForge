@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+node_modules/
+
+# 环境变量（含敏感信息）
+.env
+
+# 数据目录：运行时数据忽略，保留可复现的路由回放样例
+data/*
+!data/replay/
+!data/replay/route_cases.json
+!data/replay/graph_cases.json
+!data/chunking/
+!data/chunking/cases.json
+!data/evidence/
+data/evidence/*
+!data/evidence/chunking-report.json
+!data/evidence/graph-replay-report.json
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker 构建产物
+build-image*.sh
+
+# ChromaDB 本地数据
+*.sqlite3
+
+# 备份文件
+*~
+*.bak
+docker-compose(1).yml

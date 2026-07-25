@@ -1,0 +1,534 @@
+{
+  "scope": "deterministic_graph_path_replay",
+  "total": 5,
+  "passed": 5,
+  "failed": 0,
+  "results": [
+    {
+      "case_id": "knowledge-path",
+      "passed": true,
+      "expected": {
+        "stop_reason": "completed",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "retrieve",
+          "execute_agent",
+          "persist_memory",
+          "complete"
+        ]
+      },
+      "actual": {
+        "stop_reason": "completed",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "retrieve",
+          "execute_agent",
+          "persist_memory",
+          "complete"
+        ],
+        "transitions": 5,
+        "failed_nodes": []
+      },
+      "trace": {
+        "trace_id": "graph-c1f4c54e08d343a4",
+        "graph_name": "echoforge_chat_pipeline_replay",
+        "created_at": "2026-07-24T13:39:12.590355+00:00",
+        "start_node": "load_memory",
+        "terminal_nodes": [
+          "complete"
+        ],
+        "budget": {
+          "max_node_executions": 8,
+          "max_transitions": 7,
+          "max_total_runtime_ms": 1000.0
+        },
+        "node_runs": [
+          {
+            "node": "load_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.07160000041039893,
+            "error_type": null
+          },
+          {
+            "node": "decide_retrieval",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.04069999977218686,
+            "error_type": null
+          },
+          {
+            "node": "retrieve",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.021500000002561137,
+            "error_type": null
+          },
+          {
+            "node": "execute_agent",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.012200000128359534,
+            "error_type": null
+          },
+          {
+            "node": "persist_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.012200000128359534,
+            "error_type": null
+          },
+          {
+            "node": "complete",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.010399999155197293,
+            "error_type": null
+          }
+        ],
+        "transitions": [
+          {
+            "source": "load_memory",
+            "target": "decide_retrieval",
+            "label": "memory_loaded"
+          },
+          {
+            "source": "decide_retrieval",
+            "target": "retrieve",
+            "label": "retrieval_required"
+          },
+          {
+            "source": "retrieve",
+            "target": "execute_agent",
+            "label": "context_ready"
+          },
+          {
+            "source": "execute_agent",
+            "target": "persist_memory",
+            "label": "agent_completed"
+          },
+          {
+            "source": "persist_memory",
+            "target": "complete",
+            "label": "memory_persisted"
+          }
+        ],
+        "stop_reason": "completed",
+        "total_latency_ms": 0.22730000000592554,
+        "node_timings_ms": {
+          "load_memory": 0.072,
+          "decide_retrieval": 0.041,
+          "retrieve": 0.022,
+          "execute_agent": 0.012,
+          "persist_memory": 0.012,
+          "complete": 0.01
+        }
+      }
+    },
+    {
+      "case_id": "greeting-skips-retrieval",
+      "passed": true,
+      "expected": {
+        "stop_reason": "completed",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "execute_agent",
+          "persist_memory",
+          "complete"
+        ]
+      },
+      "actual": {
+        "stop_reason": "completed",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "execute_agent",
+          "persist_memory",
+          "complete"
+        ],
+        "transitions": 4,
+        "failed_nodes": []
+      },
+      "trace": {
+        "trace_id": "graph-9ba2a2c8508a45ab",
+        "graph_name": "echoforge_chat_pipeline_replay",
+        "created_at": "2026-07-24T13:39:12.590893+00:00",
+        "start_node": "load_memory",
+        "terminal_nodes": [
+          "complete"
+        ],
+        "budget": {
+          "max_node_executions": 8,
+          "max_transitions": 7,
+          "max_total_runtime_ms": 1000.0
+        },
+        "node_runs": [
+          {
+            "node": "load_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.021100000594742596,
+            "error_type": null
+          },
+          {
+            "node": "decide_retrieval",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.01869999960035784,
+            "error_type": null
+          },
+          {
+            "node": "execute_agent",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.01160000010713702,
+            "error_type": null
+          },
+          {
+            "node": "persist_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.009200000022246968,
+            "error_type": null
+          },
+          {
+            "node": "complete",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.009100000170292333,
+            "error_type": null
+          }
+        ],
+        "transitions": [
+          {
+            "source": "load_memory",
+            "target": "decide_retrieval",
+            "label": "memory_loaded"
+          },
+          {
+            "source": "decide_retrieval",
+            "target": "execute_agent",
+            "label": "retrieval_skipped"
+          },
+          {
+            "source": "execute_agent",
+            "target": "persist_memory",
+            "label": "agent_completed"
+          },
+          {
+            "source": "persist_memory",
+            "target": "complete",
+            "label": "memory_persisted"
+          }
+        ],
+        "stop_reason": "completed",
+        "total_latency_ms": 0.10159999965253519,
+        "node_timings_ms": {
+          "load_memory": 0.021,
+          "decide_retrieval": 0.019,
+          "execute_agent": 0.012,
+          "persist_memory": 0.009,
+          "complete": 0.009
+        }
+      }
+    },
+    {
+      "case_id": "retrieval-retries-once",
+      "passed": true,
+      "expected": {
+        "stop_reason": "completed",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "retrieve",
+          "execute_agent",
+          "persist_memory",
+          "complete"
+        ],
+        "failed_nodes": [
+          "retrieve"
+        ]
+      },
+      "actual": {
+        "stop_reason": "completed",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "retrieve",
+          "execute_agent",
+          "persist_memory",
+          "complete"
+        ],
+        "transitions": 5,
+        "failed_nodes": [
+          "retrieve"
+        ]
+      },
+      "trace": {
+        "trace_id": "graph-165f256e126d4688",
+        "graph_name": "echoforge_chat_pipeline_replay",
+        "created_at": "2026-07-24T13:39:12.591172+00:00",
+        "start_node": "load_memory",
+        "terminal_nodes": [
+          "complete"
+        ],
+        "budget": {
+          "max_node_executions": 8,
+          "max_transitions": 7,
+          "max_total_runtime_ms": 1000.0
+        },
+        "node_runs": [
+          {
+            "node": "load_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.021099999685247894,
+            "error_type": null
+          },
+          {
+            "node": "decide_retrieval",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.015300000086426735,
+            "error_type": null
+          },
+          {
+            "node": "retrieve",
+            "attempt": 1,
+            "status": "failed",
+            "latency_ms": 0.02320000021427404,
+            "error_type": "RuntimeError"
+          },
+          {
+            "node": "retrieve",
+            "attempt": 2,
+            "status": "completed",
+            "latency_ms": 0.016999999388644937,
+            "error_type": null
+          },
+          {
+            "node": "execute_agent",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.013999999282532372,
+            "error_type": null
+          },
+          {
+            "node": "persist_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.010600000678095967,
+            "error_type": null
+          },
+          {
+            "node": "complete",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.010599999768601265,
+            "error_type": null
+          }
+        ],
+        "transitions": [
+          {
+            "source": "load_memory",
+            "target": "decide_retrieval",
+            "label": "memory_loaded"
+          },
+          {
+            "source": "decide_retrieval",
+            "target": "retrieve",
+            "label": "retrieval_required"
+          },
+          {
+            "source": "retrieve",
+            "target": "execute_agent",
+            "label": "context_ready"
+          },
+          {
+            "source": "execute_agent",
+            "target": "persist_memory",
+            "label": "agent_completed"
+          },
+          {
+            "source": "persist_memory",
+            "target": "complete",
+            "label": "memory_persisted"
+          }
+        ],
+        "stop_reason": "completed",
+        "total_latency_ms": 0.15619999976479448,
+        "node_timings_ms": {
+          "load_memory": 0.021,
+          "decide_retrieval": 0.015,
+          "retrieve": 0.04,
+          "execute_agent": 0.014,
+          "persist_memory": 0.011,
+          "complete": 0.011
+        }
+      }
+    },
+    {
+      "case_id": "agent-failure-stops-persistence",
+      "passed": true,
+      "expected": {
+        "stop_reason": "node_failed",
+        "path": [
+          "load_memory",
+          "decide_retrieval"
+        ],
+        "failed_nodes": [
+          "execute_agent"
+        ]
+      },
+      "actual": {
+        "stop_reason": "node_failed",
+        "path": [
+          "load_memory",
+          "decide_retrieval"
+        ],
+        "transitions": 2,
+        "failed_nodes": [
+          "execute_agent"
+        ]
+      },
+      "trace": {
+        "trace_id": "graph-149d64c2be384619",
+        "graph_name": "echoforge_chat_pipeline_replay",
+        "created_at": "2026-07-24T13:39:12.591509+00:00",
+        "start_node": "load_memory",
+        "terminal_nodes": [
+          "complete"
+        ],
+        "budget": {
+          "max_node_executions": 8,
+          "max_transitions": 7,
+          "max_total_runtime_ms": 1000.0
+        },
+        "node_runs": [
+          {
+            "node": "load_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.021299999389157165,
+            "error_type": null
+          },
+          {
+            "node": "decide_retrieval",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.01320000046689529,
+            "error_type": null
+          },
+          {
+            "node": "execute_agent",
+            "attempt": 1,
+            "status": "failed",
+            "latency_ms": 0.016599999980826396,
+            "error_type": "RuntimeError"
+          }
+        ],
+        "transitions": [
+          {
+            "source": "load_memory",
+            "target": "decide_retrieval",
+            "label": "memory_loaded"
+          },
+          {
+            "source": "decide_retrieval",
+            "target": "execute_agent",
+            "label": "retrieval_skipped"
+          }
+        ],
+        "stop_reason": "node_failed",
+        "total_latency_ms": 0.07549999918410322,
+        "node_timings_ms": {
+          "load_memory": 0.021,
+          "decide_retrieval": 0.013,
+          "execute_agent": 0.017
+        }
+      }
+    },
+    {
+      "case_id": "transition-budget",
+      "passed": true,
+      "expected": {
+        "stop_reason": "transition_budget_exhausted",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "retrieve"
+        ],
+        "transitions": 2
+      },
+      "actual": {
+        "stop_reason": "transition_budget_exhausted",
+        "path": [
+          "load_memory",
+          "decide_retrieval",
+          "retrieve"
+        ],
+        "transitions": 2,
+        "failed_nodes": []
+      },
+      "trace": {
+        "trace_id": "graph-97fe05e32eee484a",
+        "graph_name": "echoforge_chat_pipeline_replay",
+        "created_at": "2026-07-24T13:39:12.591717+00:00",
+        "start_node": "load_memory",
+        "terminal_nodes": [
+          "complete"
+        ],
+        "budget": {
+          "max_node_executions": 8,
+          "max_transitions": 2,
+          "max_total_runtime_ms": 1000.0
+        },
+        "node_runs": [
+          {
+            "node": "load_memory",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.01739999970595818,
+            "error_type": null
+          },
+          {
+            "node": "decide_retrieval",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.01320000046689529,
+            "error_type": null
+          },
+          {
+            "node": "retrieve",
+            "attempt": 1,
+            "status": "completed",
+            "latency_ms": 0.0106999996205559,
+            "error_type": null
+          }
+        ],
+        "transitions": [
+          {
+            "source": "load_memory",
+            "target": "decide_retrieval",
+            "label": "memory_loaded"
+          },
+          {
+            "source": "decide_retrieval",
+            "target": "retrieve",
+            "label": "retrieval_required"
+          }
+        ],
+        "stop_reason": "transition_budget_exhausted",
+        "total_latency_ms": 0.05880000026081689,
+        "node_timings_ms": {
+          "load_memory": 0.017,
+          "decide_retrieval": 0.013,
+          "retrieve": 0.011
+        }
+      }
+    }
+  ]
+}

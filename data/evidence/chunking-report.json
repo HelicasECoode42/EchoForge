@@ -1,0 +1,271 @@
+{
+  "evaluation_scope": "offline_chunk_boundary_comparison",
+  "metric_note": "Latency is local harness overhead; it is not vector DB or model latency.",
+  "winner": "structure_token",
+  "strategies": [
+    {
+      "strategy": "fixed_char",
+      "ranker": "deterministic_lexical_proxy",
+      "top_k": 3,
+      "documents": 4,
+      "queries": 8,
+      "chunk_count": 8,
+      "indexing_latency_ms": 0.717,
+      "avg_retrieval_latency_ms": 0.717,
+      "recall_at_k": 0.875,
+      "mrr": 0.8281,
+      "evidence_coverage": 0.875,
+      "avg_context_tokens": 428.5,
+      "cases": [
+        {
+          "case_id": "quest-manual-claim",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 382,
+          "retrieval_latency_ms": 0.7496000007449766
+        },
+        {
+          "case_id": "quest-idempotency",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 357,
+          "retrieval_latency_ms": 1.0217999997621519
+        },
+        {
+          "case_id": "npc-visibility",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 524,
+          "retrieval_latency_ms": 0.6527000005007721
+        },
+        {
+          "case_id": "npc-promise",
+          "first_relevant_rank": 2,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 0.5,
+          "evidence_coverage": 1.0,
+          "context_tokens": 499,
+          "retrieval_latency_ms": 0.5804000002171961
+        },
+        {
+          "case_id": "graph-budget",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 427,
+          "retrieval_latency_ms": 0.6022000006851158
+        },
+        {
+          "case_id": "trace-privacy",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 427,
+          "retrieval_latency_ms": 0.7020000002739835
+        },
+        {
+          "case_id": "chunk-metadata",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 396,
+          "retrieval_latency_ms": 0.6725000002916204
+        },
+        {
+          "case_id": "harness-metrics",
+          "first_relevant_rank": 8,
+          "recall_at_k": 0.0,
+          "reciprocal_rank": 0.125,
+          "evidence_coverage": 0.0,
+          "context_tokens": 416,
+          "retrieval_latency_ms": 0.7566000003862428
+        }
+      ]
+    },
+    {
+      "strategy": "sliding_window",
+      "ranker": "deterministic_lexical_proxy",
+      "top_k": 3,
+      "documents": 4,
+      "queries": 8,
+      "chunk_count": 8,
+      "indexing_latency_ms": 0.395,
+      "avg_retrieval_latency_ms": 0.649,
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "evidence_coverage": 1.0,
+      "avg_context_tokens": 467.88,
+      "cases": [
+        {
+          "case_id": "quest-manual-claim",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 439,
+          "retrieval_latency_ms": 0.6025000002409797
+        },
+        {
+          "case_id": "quest-idempotency",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 473,
+          "retrieval_latency_ms": 0.6167999999888707
+        },
+        {
+          "case_id": "npc-visibility",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 524,
+          "retrieval_latency_ms": 0.6219999995664693
+        },
+        {
+          "case_id": "npc-promise",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 452,
+          "retrieval_latency_ms": 0.6067999993319972
+        },
+        {
+          "case_id": "graph-budget",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 472,
+          "retrieval_latency_ms": 0.8699999998498242
+        },
+        {
+          "case_id": "trace-privacy",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 442,
+          "retrieval_latency_ms": 0.6438000000343891
+        },
+        {
+          "case_id": "chunk-metadata",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 431,
+          "retrieval_latency_ms": 0.6081999999878462
+        },
+        {
+          "case_id": "harness-metrics",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 510,
+          "retrieval_latency_ms": 0.624700000116718
+        }
+      ]
+    },
+    {
+      "strategy": "structure_token",
+      "ranker": "deterministic_lexical_proxy",
+      "top_k": 3,
+      "documents": 4,
+      "queries": 8,
+      "chunk_count": 9,
+      "indexing_latency_ms": 0.716,
+      "avg_retrieval_latency_ms": 0.677,
+      "recall_at_k": 1.0,
+      "mrr": 1.0,
+      "evidence_coverage": 1.0,
+      "avg_context_tokens": 339.12,
+      "cases": [
+        {
+          "case_id": "quest-manual-claim",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 356,
+          "retrieval_latency_ms": 0.7273999999597436
+        },
+        {
+          "case_id": "quest-idempotency",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 343,
+          "retrieval_latency_ms": 0.7598000001962646
+        },
+        {
+          "case_id": "npc-visibility",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 361,
+          "retrieval_latency_ms": 0.711599999704049
+        },
+        {
+          "case_id": "npc-promise",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 249,
+          "retrieval_latency_ms": 0.5592999996224535
+        },
+        {
+          "case_id": "graph-budget",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 333,
+          "retrieval_latency_ms": 0.5016999994040816
+        },
+        {
+          "case_id": "trace-privacy",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 348,
+          "retrieval_latency_ms": 0.5139999993843958
+        },
+        {
+          "case_id": "chunk-metadata",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 374,
+          "retrieval_latency_ms": 0.5109000003358233
+        },
+        {
+          "case_id": "harness-metrics",
+          "first_relevant_rank": 1,
+          "recall_at_k": 1.0,
+          "reciprocal_rank": 1.0,
+          "evidence_coverage": 1.0,
+          "context_tokens": 349,
+          "retrieval_latency_ms": 1.129199999923003
+        }
+      ]
+    }
+  ]
+}

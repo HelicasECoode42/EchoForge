@@ -1,0 +1,78 @@
+{
+  "documents": [
+    {
+      "id": "quest-policy",
+      "title": "委托与声望规则",
+      "version": "2",
+      "content": "# 委托接取\n玩家每天可以接取四项日常委托。跨区域委托会根据当前世界等级匹配敌人强度。未完成的日常委托会在次日刷新时失效。\n\n## 组队限制\n联机状态下可以共同完成战斗目标，但提交剧情道具必须由房主操作。访客完成的战斗进度会同步，剧情分支不会同步。\n\n# 声望结算\n完成全部四项日常委托后，玩家需要前往冒险家协会领取额外奖励。额外奖励包含地区声望与通用货币，每日只能领取一次。若玩家完成战斗但未与接待员对话，额外奖励不会自动发放。\n\n## 异常恢复\n结算请求使用任务实例号保证幂等。网络重连后客户端重新拉取任务状态，不重复增加地区声望。"
+    },
+    {
+      "id": "npc-memory",
+      "title": "NPC 记忆与传闻",
+      "version": "3",
+      "content": "# 世界事实与主观认知\n世界事实由服务器事件日志确认，不会因为 NPC 的说法而改变。NPC 只会记住自己亲眼见证、被可信角色告知或根据线索推断的事件。\n\n## 可见性\n未出现在酒馆冲突现场的守卫不会直接知道冲突经过。守卫之后可以从老板处听到传闻，但这条信息标记为 heard，而不是 witnessed。传闻能够改变守卫对玩家的怀疑程度，却不能覆盖服务器保存的世界真相。\n\n## 情绪关系\n玩家兑现护送承诺会提高商人的信任与亲近。玩家失约会产生一条高显著性的背叛事件，降低信任并改变后续对话分支。高显著性事件不会随普通时间衰减。\n\n## 记忆衰减\n闲聊细节使用指数衰减并在低于阈值后退出召回候选。任务承诺、阵营变化和角色死亡被标记为关键事件，长期保留。"
+    },
+    {
+      "id": "agent-runtime",
+      "title": "Agent 执行与回放",
+      "version": "5",
+      "content": "# 执行图\n请求从 load_memory 节点开始，根据 should_retrieve 条件选择是否进入 retrieve。execute_agent 完成后必须经过 persist_memory，最后到达 complete。\n\n## 预算\n运行时限制最大节点执行次数、最大边跳转次数和总耗时。单个节点还可以设置超时与重试次数。任何预算耗尽都必须产生明确 stop_reason，禁止无界循环。\n\n## 证据\n路径证据记录节点、条件边、耗时和错误类型。证据文件只保存消息哈希与长度，不保存用户原始输入。确定性回放使用固定节点结果验证路径选择，无需模型 API Key。\n\n## 降级\n专业 Agent 失败后最多 reroute 一次到通用 Agent。若尝试配额已用尽，返回部分结果或转人工提示，不继续盲目重试。"
+    },
+    {
+      "id": "retrieval-design",
+      "title": "知识检索设计",
+      "version": "4",
+      "content": "# 文档切分\n固定字符切分实现简单，但可能把证据截断在边界。滑动窗口通过重叠保护边界信息，代价是块数量与上下文 token 增加。结构感知策略保留 Markdown 标题路径，并按 token budget 组合段落。\n\n## 元数据\n每个块记录文档版本、字符起止偏移、内容哈希、章节路径以及前后相邻块标识。索引更新时可以根据版本和内容哈希定位失效块。\n\n## 评测\nChunking Harness 在同一查询集上比较 Recall@K、MRR、证据覆盖率、块数量、上下文 token 数、索引耗时和检索耗时。离线词法排序只用于隔离切分边界影响，不能冒充线上向量数据库延迟。\n\n## 选择\n策略选择先满足召回和证据覆盖，再比较上下文成本。上线后还需要使用真实 Embedding 与 Rerank 链路复测。"
+    }
+  ],
+  "cases": [
+    {
+      "id": "quest-manual-claim",
+      "query": "四项委托完成后为什么没有额外声望",
+      "relevant_document_id": "quest-policy",
+      "evidence": ["前往冒险家协会领取额外奖励", "未与接待员对话，额外奖励不会自动发放"]
+    },
+    {
+      "id": "quest-idempotency",
+      "query": "重连会不会重复增加地区声望",
+      "relevant_document_id": "quest-policy",
+      "evidence": ["任务实例号保证幂等", "不重复增加地区声望"]
+    },
+    {
+      "id": "npc-visibility",
+      "query": "不在酒馆现场的守卫是否知道冲突",
+      "relevant_document_id": "npc-memory",
+      "evidence": ["不会直接知道冲突经过", "标记为 heard，而不是 witnessed"]
+    },
+    {
+      "id": "npc-promise",
+      "query": "玩家对商人失约后 NPC 如何变化",
+      "relevant_document_id": "npc-memory",
+      "evidence": ["高显著性的背叛事件", "降低信任并改变后续对话分支"]
+    },
+    {
+      "id": "graph-budget",
+      "query": "如何防止 Agent 图出现无限循环",
+      "relevant_document_id": "agent-runtime",
+      "evidence": ["最大节点执行次数、最大边跳转次数和总耗时", "禁止无界循环"]
+    },
+    {
+      "id": "trace-privacy",
+      "query": "执行证据会不会保存用户原始消息",
+      "relevant_document_id": "agent-runtime",
+      "evidence": ["只保存消息哈希与长度", "不保存用户原始输入"]
+    },
+    {
+      "id": "chunk-metadata",
+      "query": "知识块应该记录哪些可追溯元数据",
+      "relevant_document_id": "retrieval-design",
+      "evidence": ["文档版本、字符起止偏移、内容哈希、章节路径", "前后相邻块标识"]
+    },
+    {
+      "id": "harness-metrics",
+      "query": "Chunking 对照实验评哪些指标",
+      "relevant_document_id": "retrieval-design",
+      "evidence": ["Recall@K、MRR、证据覆盖率", "上下文 token 数、索引耗时和检索耗时"]
+    }
+  ]
+}

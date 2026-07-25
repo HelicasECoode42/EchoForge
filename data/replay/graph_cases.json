@@ -1,0 +1,50 @@
+{
+  "cases": [
+    {
+      "id": "knowledge-path",
+      "use_retrieval": true,
+      "expected": {
+        "stop_reason": "completed",
+        "path": ["load_memory", "decide_retrieval", "retrieve", "execute_agent", "persist_memory", "complete"]
+      }
+    },
+    {
+      "id": "greeting-skips-retrieval",
+      "use_retrieval": false,
+      "expected": {
+        "stop_reason": "completed",
+        "path": ["load_memory", "decide_retrieval", "execute_agent", "persist_memory", "complete"]
+      }
+    },
+    {
+      "id": "retrieval-retries-once",
+      "use_retrieval": true,
+      "node_outcomes": {"retrieve": [false, true]},
+      "expected": {
+        "stop_reason": "completed",
+        "path": ["load_memory", "decide_retrieval", "retrieve", "execute_agent", "persist_memory", "complete"],
+        "failed_nodes": ["retrieve"]
+      }
+    },
+    {
+      "id": "agent-failure-stops-persistence",
+      "use_retrieval": false,
+      "node_outcomes": {"execute_agent": [false]},
+      "expected": {
+        "stop_reason": "node_failed",
+        "path": ["load_memory", "decide_retrieval"],
+        "failed_nodes": ["execute_agent"]
+      }
+    },
+    {
+      "id": "transition-budget",
+      "use_retrieval": true,
+      "budget": {"max_transitions": 2},
+      "expected": {
+        "stop_reason": "transition_budget_exhausted",
+        "path": ["load_memory", "decide_retrieval", "retrieve"],
+        "transitions": 2
+      }
+    }
+  ]
+}
