@@ -22,6 +22,8 @@ data/*
 data/evidence/*
 !data/evidence/chunking-report.json
 !data/evidence/graph-replay-report.json
+!data/evidence/vector-retrieval-report.json
+!data/evidence/retrieval-policy-benchmark.json
 logs/
 
 # IDE

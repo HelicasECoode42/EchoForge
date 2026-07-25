@@ -10,7 +10,6 @@
 LLM 和 Embedding 并行调用，不串行等待。
 """
 import asyncio
-import hashlib
 import json
 import logging
 import time
@@ -19,6 +18,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from anthropic import AsyncAnthropic
+
+from retrieval.embedding import EmbeddingConfig, EmbeddingProvider, create_embedding_provider
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ class IntentRecognizer:
         base_url: Optional[str] = None,
         model: str = "claude-3-5-sonnet-20241022",
         confidence_threshold: float = 0.5,
+        embedding_provider: Optional[EmbeddingProvider] = None,
     ):
         kwargs: Dict[str, Any] = {"api_key": api_key}
         if base_url:
@@ -103,10 +105,10 @@ class IntentRecognizer:
         self.client    = AsyncAnthropic(**kwargs)
         self.model     = model
         self.threshold = confidence_threshold
-        # 第三方兼容 API（如 DeepSeek）通常不支持 Embedding，禁用该策略。
-        # 官方 Anthropic SDK 当前没有 embeddings 资源，因此下面会使用稳定的
-        # 本地字符 n-gram 向量作为轻量兜底，保证三路融合链路真实可跑。
-        self._embedding_enabled = not bool(base_url)
+        # Embedding 与 LLM 供应商解耦：固定使用可版本化的本地中文 BGE 模型，
+        # 不再把字符 n-gram 哈希向量包装成“语义 Embedding”。
+        self._embedding = embedding_provider or create_embedding_provider(EmbeddingConfig.from_env())
+        self._embedding_enabled = True
 
         self._tpl_embeddings: Dict[IntentCategory, List[List[float]]] = {}
         self._cache: Dict[str, IntentResult] = {}
@@ -328,41 +330,8 @@ class IntentRecognizer:
             idx += n
 
     async def _embed_text(self, text: str) -> List[float]:
-        """
-        生成文本向量。
-
-        如果未来接入的官方/兼容客户端提供 embeddings.create，会优先使用远端向量；
-        当前 Anthropic SDK 没有该资源时，退化为字符 n-gram 哈希向量。这样不会因为
-        Embedding 服务缺失导致三路融合中断。
-        """
-        embeddings = getattr(self.client, "embeddings", None)
-        if embeddings is not None:
-            try:
-                resp = await embeddings.create(model="voyage-3-lite", input=[text])
-                return list(resp.data[0].embedding)
-            except Exception as ex:
-                logger.warning(f"远端 Embedding 失败，使用本地向量兜底: {ex}")
-
-        return self._local_embedding(text)
-
-    @staticmethod
-    def _local_embedding(text: str, dims: int = 256) -> List[float]:
-        """稳定的字符 n-gram 哈希向量，用于无远端 Embedding 时的语义近似匹配。"""
-        normalized = text.lower().strip()
-        vec = [0.0] * dims
-        tokens = set()
-        for n in (1, 2, 3):
-            if len(normalized) >= n:
-                tokens.update(normalized[i:i + n] for i in range(len(normalized) - n + 1))
-        if not tokens:
-            tokens.add(normalized)
-
-        for token in tokens:
-            digest = hashlib.md5(token.encode("utf-8")).digest()
-            idx = int.from_bytes(digest[:4], "big") % dims
-            sign = 1.0 if digest[4] % 2 == 0 else -1.0
-            vec[idx] += sign
-        return vec
+        """Generate a real semantic vector off the event loop."""
+        return (await asyncio.to_thread(self._embedding.embed_queries, [text]))[0]
 
     def _urgency(self, message: str, intent: IntentCategory) -> UrgencyLevel:
         msg = message.lower()

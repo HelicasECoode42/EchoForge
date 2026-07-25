@@ -84,6 +84,12 @@ services:
       - CHROMA_PERSIST_DIRECTORY=/app/data/chroma
       - EVAL_BASELINE_PATH=/app/data/eval/baseline.json
       - CHUNK_STRATEGY=${CHUNK_STRATEGY:-structure_token}
+      - EMBEDDING_PROVIDER=fastembed
+      - EMBEDDING_PROVIDER_VERSION=0.8.0
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-small-zh-v1.5}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-512}
+      - EMBEDDING_DISTANCE=cosine
+      - EMBEDDING_CACHE_DIR=/home/echomind/.cache/fastembed
       - GRAPH_TRACE_PATH=/app/data/evidence/graph_traces.jsonl
     volumes:
       - ./data/chroma:/app/data/chroma

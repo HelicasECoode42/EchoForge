@@ -2,7 +2,7 @@
 RAG 知识库 —— 基于 ChromaDB 的真实检索实现。
 
 功能：
-  1. 文档导入：将文本切片后存入 ChromaDB（自动生成 Embedding）
+  1. 文档导入：显式使用固定模型生成 Embedding 后写入 ChromaDB
   2. 语义检索：根据 query 从知识库中检索最相关的文档片段
   3. 与 MCP 工具框架集成：作为 knowledge_search 工具的真实 handler
 
@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional
 import chromadb
 
 from retrieval.chunking import Chunker, create_chunker
+from retrieval.embedding import EmbeddingConfig, EmbeddingProvider, create_embedding_provider
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +27,12 @@ class KnowledgeBase:
     """
     基于 ChromaDB 的 RAG 知识库。
 
-    ChromaDB 内置了 Embedding 模型（all-MiniLM-L6-v2），
-    调用 add() 时自动生成向量，query() 时自动做语义匹配。
-    不需要额外调用 Anthropic Embeddings API。
+    模型、维度、距离度量与索引 schema 均由 EmbeddingConfig 显式声明。
+    collection 名称携带配置指纹，模型变化时强制建立新索引，避免不同
+    维度或不同分布的向量被静默混用。
     """
 
-    COLLECTION_NAME = "knowledge_base"
+    COLLECTION_PREFIX = "knowledge_base_v2"
 
     def __init__(
         self,
@@ -40,31 +41,45 @@ class KnowledgeBase:
         chroma_path: str = "./data/chroma",
         chunk_strategy: str = "structure_token",
         chunker: Optional[Chunker] = None,
+        embedding_config: Optional[EmbeddingConfig] = None,
+        embedding_provider: Optional[EmbeddingProvider] = None,
+        client: Optional[Any] = None,
+        load_default_docs: bool = True,
     ):
         self._chunker = chunker or create_chunker(chunk_strategy)
-        # 优先连接独立 ChromaDB 服务（服务端内置 embedding 模型，客户端无需下载）
+        self._embedding_config = embedding_config or EmbeddingConfig.from_env()
+        self._embedding = embedding_provider or create_embedding_provider(self._embedding_config)
+        # 优先连接独立 ChromaDB 服务；Embedding 始终由应用端显式生成。
         self._use_server = False
-        try:
-            self._client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
-            self._client.heartbeat()
-            self._use_server = True
-            logger.info(f"知识库 ChromaDB 已连接: {chroma_host}:{chroma_port}")
-        except Exception:
-            logger.info(f"知识库 ChromaDB 服务不可用，使用本地模式: {chroma_path}")
-            self._client = chromadb.PersistentClient(
-                path=chroma_path,
-                settings=chromadb.Settings(anonymized_telemetry=False),
-            )
+        if client is not None:
+            self._client = client
+        else:
+            try:
+                self._client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
+                self._client.heartbeat()
+                self._use_server = True
+                logger.info(f"知识库 ChromaDB 已连接: {chroma_host}:{chroma_port}")
+            except Exception:
+                logger.info(f"知识库 ChromaDB 服务不可用，使用本地模式: {chroma_path}")
+                self._client = chromadb.PersistentClient(
+                    path=chroma_path,
+                    settings=chromadb.Settings(anonymized_telemetry=False),
+                )
 
-        # 使用服务端时不传 embedding_function，让服务端处理
-        # 本地模式时也不传，使用 ChromaDB 默认的（会触发模型下载）
+        collection_name = f"{self.COLLECTION_PREFIX}_{self._embedding_config.fingerprint}"
+        metadata: Dict[str, Any] = {
+            "description": "EchoForge RAG knowledge base",
+            "hnsw:space": self._embedding_config.distance,
+            **self._embedding_config.metadata(),
+        }
         self._collection = self._client.get_or_create_collection(
-            name=self.COLLECTION_NAME,
-            metadata={"description": "EchoMind RAG 知识库"},
+            name=collection_name,
+            metadata=metadata,
         )
+        self._validate_collection_metadata()
 
         # 如果知识库为空，导入默认文档
-        if self._collection.count() == 0:
+        if load_default_docs and self._collection.count() == 0:
             self._load_default_docs()
 
     # ── 文档管理 ──────────────────────────────────────────────────────────────
@@ -98,8 +113,13 @@ class KnowledgeBase:
                 metas.append(chunk.metadata())
 
         if ids:
-            # ChromaDB 会自动生成 Embedding
-            self._collection.upsert(ids=ids, documents=docs, metadatas=metas)
+            embeddings = self._embedding.embed_documents(docs)
+            self._collection.upsert(
+                ids=ids,
+                documents=docs,
+                metadatas=metas,
+                embeddings=embeddings,
+            )
             logger.info(f"知识库导入 {len(ids)} 个文档片段")
 
         return len(ids)
@@ -108,10 +128,11 @@ class KnowledgeBase:
         """
         语义检索：根据 query 返回最相关的文档片段。
 
-        ChromaDB 内部自动将 query 转为向量，与存储的文档向量做余弦相似度匹配。
+        应用端将 query 转为固定版本向量，ChromaDB 只负责余弦近邻检索。
         """
+        query_embedding = self._embedding.embed_queries([query])[0]
         results = self._collection.query(
-            query_texts=[query],
+            query_embeddings=[query_embedding],
             n_results=top_k,
         )
 
@@ -147,6 +168,10 @@ class KnowledgeBase:
     @property
     def chunk_strategy(self) -> str:
         return self._chunker.name
+
+    @property
+    def embedding_info(self) -> Dict[str, str | int]:
+        return self._embedding_config.metadata()
 
     # ── MCP 工具 handler ─────────────────────────────────────────────────────
 
@@ -252,3 +277,17 @@ class KnowledgeBase:
         ]
         self.add_documents(default_docs)
         logger.info(f"已导入默认知识库: {len(default_docs)} 篇文档")
+
+    def _validate_collection_metadata(self) -> None:
+        actual = self._collection.metadata or {}
+        expected = self._embedding_config.metadata()
+        mismatches = {
+            key: {"expected": value, "actual": actual.get(key)}
+            for key, value in expected.items()
+            if actual.get(key) != value
+        }
+        if mismatches:
+            raise RuntimeError(
+                "Chroma collection embedding metadata mismatch; reindex into a new "
+                f"fingerprinted collection: {mismatches}"
+            )
