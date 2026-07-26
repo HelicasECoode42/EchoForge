@@ -18,6 +18,8 @@ data/*
 !data/replay/graph_cases.json
 !data/chunking/
 !data/chunking/cases.json
+!data/eval/
+!data/eval/intent_cases.v1.json
 !data/evidence/
 data/evidence/*
 !data/evidence/chunking-report.json

@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional
 from anthropic import AsyncAnthropic
 
 from core.intent_recognizer import IntentCategory, IntentRecognizer
+from core.model_response import create_message, extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +123,13 @@ Agent 响应: {response}
         )
         prompt = self._clean_text(prompt)
         try:
-            resp = await self._client.messages.create(
+            resp = await create_message(
+                self._client,
+                component="evaluation.judge",
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
             data = json.loads(raw[s:e])
             return QualityScores(
@@ -486,6 +489,42 @@ DEFAULT_INTENT_CASES: List[IntentTestCase] = [
     IntentTestCase("你好",                        "greeting"),
     IntentTestCase("修改我的邮箱地址",            "account"),
 ]
+
+
+def load_intent_cases(path: Optional[str] = None) -> tuple[List[IntentTestCase], Dict[str, Any]]:
+    """Load an auditable intent dataset and return cases plus provenance."""
+    dataset_path = pathlib.Path(path) if path else pathlib.Path(__file__).parent.parent / "data/eval/intent_cases.v1.json"
+    try:
+        payload = json.loads(dataset_path.read_text(encoding="utf-8"))
+        cases = [
+            IntentTestCase(
+                message=str(item["message"]),
+                expected_intent=str(item["expected_intent"]),
+            )
+            for item in payload.get("cases", [])
+        ]
+        if not cases:
+            raise ValueError("dataset contains no cases")
+        provenance = {
+            "dataset_id": payload.get("dataset_id", dataset_path.stem),
+            "version": payload.get("version", "unknown"),
+            "source": payload.get("source", "unknown"),
+            "label_status": payload.get("label_status", "unknown"),
+            "case_count": len(cases),
+            "path": str(dataset_path),
+        }
+        return cases, provenance
+    except Exception as ex:
+        logger.warning("无法加载意图数据集 %s，回退内置样例: %s", dataset_path, ex)
+        return DEFAULT_INTENT_CASES, {
+            "dataset_id": "builtin-default",
+            "version": "unknown",
+            "source": "builtin",
+            "label_status": "unknown",
+            "case_count": len(DEFAULT_INTENT_CASES),
+            "path": str(dataset_path),
+            "load_error": str(ex),
+        }
 
 DEFAULT_DIALOG_CASES: List[Dict[str, Any]] = [
     {"question": "我的订单 #12345 还没到，已经超时了"},

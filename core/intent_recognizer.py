@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from anthropic import AsyncAnthropic
 
+from core.model_response import create_message, extract_text
 from retrieval.embedding import EmbeddingConfig, EmbeddingProvider, create_embedding_provider
 
 logger = logging.getLogger(__name__)
@@ -136,7 +137,7 @@ class IntentRecognizer:
         t0 = time.monotonic()
 
         # LLM 和 Embedding 并行（Embedding 不可用时跳过）
-        llm_task = asyncio.create_task(self._llm_recognize(message, history))
+        llm_task = asyncio.create_task(self._llm_analyze(message, history))
         emb_task = asyncio.create_task(self._embedding_recognize(message)) if self._embedding_enabled else None
         pat      = self._pattern_recognize(message)
 
@@ -147,7 +148,9 @@ class IntentRecognizer:
             emb = {"intent": IntentCategory.OTHER, "confidence": 0.0}
 
         intent = self._vote(llm, emb, pat)
-        entities = await self._extract_entities(message)
+        entities = llm.get("entities", self._empty_entities())
+        if not isinstance(entities, dict):
+            entities = self._empty_entities()
         urgency  = self._urgency(message, intent)
 
         result = IntentResult(
@@ -181,7 +184,20 @@ class IntentRecognizer:
         message: str,
         history: Optional[List[Dict[str, str]]],
     ) -> Dict[str, Any]:
-        """策略 1：LLM 语义理解（Few-shot + 上下文）。"""
+        """兼容入口：仅返回意图字段，实际分析由统一请求完成。"""
+        result = await self._llm_analyze(message, history)
+        return {
+            key: result[key]
+            for key in ("intent", "confidence", "reasoning", "failed")
+            if key in result
+        }
+
+    async def _llm_analyze(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]],
+    ) -> Dict[str, Any]:
+        """一次模型调用同时完成意图识别和实体抽取。"""
         message = self._clean_text(message)
         # 构建 Few-shot 示例
         examples = "\n".join(
@@ -197,7 +213,7 @@ class IntentRecognizer:
                 for m in history[-3:]
             )
 
-        prompt = f"""你是客服意图分析专家。根据示例判断用户意图，返回 JSON。
+        prompt = f"""你是客服意图分析专家。根据示例判断用户意图并提取实体，返回 JSON。
 
 示例:
 {examples}
@@ -206,29 +222,39 @@ class IntentRecognizer:
 用户消息: "{message}"
 
 返回格式（仅 JSON，不要其他文字）:
-{{"intent": "<意图值>", "confidence": <0-1>, "reasoning": "<一句话说明>"}}
+{{"intent": "<意图值>", "confidence": <0-1>, "reasoning": "<一句话说明>", "entities": {{"order_id": [], "product": [], "date": [], "amount": [], "error_code": []}}}}
 
 可选意图: {", ".join(c.value for c in IntentCategory)}"""
         prompt = self._clean_text(prompt)
 
         try:
-            resp = await self.client.messages.create(
+            resp = await create_message(
+                self.client,
+                component="intent_and_entities",
                 model=self.model,
                 max_tokens=256,
                 temperature=0.1,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
             data = json.loads(raw[s:e])
             try:
                 data["intent"] = IntentCategory(data["intent"])
             except ValueError:
                 data["intent"] = IntentCategory.OTHER
+            if not isinstance(data.get("entities"), dict):
+                data["entities"] = self._empty_entities()
             return data
         except Exception as ex:
             logger.warning(f"LLM 识别失败: {ex}")
-            return {"intent": IntentCategory.OTHER, "confidence": 0.0, "reasoning": "LLM 失败", "failed": True}
+            return {
+                "intent": IntentCategory.OTHER,
+                "confidence": 0.0,
+                "reasoning": "LLM 失败",
+                "entities": self._empty_entities(),
+                "failed": True,
+            }
 
     async def _embedding_recognize(self, message: str) -> Dict[str, Any]:
         """策略 2：Embedding 向量相似度匹配。"""
@@ -296,18 +322,29 @@ class IntentRecognizer:
     # ── 实体提取 ──────────────────────────────────────────────────────────────
 
     async def _extract_entities(self, message: str) -> Dict[str, List[str]]:
-        """用 LLM 从消息中提取结构化实体。"""
+        """兼容入口；新主链路已在意图请求中同时提取实体。"""
+        result = await self._llm_analyze(message, None)
+        return result.get("entities", self._empty_entities())
+
+    @staticmethod
+    def _empty_entities() -> Dict[str, List[str]]:
+        return {"order_id": [], "product": [], "date": [], "amount": [], "error_code": []}
+
+    async def _extract_entities_legacy(self, message: str) -> Dict[str, List[str]]:
+        """Legacy standalone entity extraction retained for comparison tests."""
         message = self._clean_text(message)
         prompt = f"""从客服消息中提取实体，返回 JSON（字段值为列表，没有则为空列表）:
 消息: "{message}"
 格式: {{"order_id":[],"product":[],"date":[],"amount":[],"error_code":[]}}"""
         prompt = self._clean_text(prompt)
         try:
-            resp = await self.client.messages.create(
+            resp = await create_message(
+                self.client,
+                component="entities.legacy",
                 model=self.model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
             return json.loads(raw[s:e])
         except Exception:

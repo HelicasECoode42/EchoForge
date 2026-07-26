@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 import chromadb
 import redis
 from anthropic import AsyncAnthropic
+from core.model_response import create_message, extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +170,13 @@ class MemoryManager:
         prompt = self._safe_text(prompt)
 
         try:
-            resp = await self._client.messages.create(
+            resp = await create_message(
+                self._client,
+                component="memory.profile",
                 model=self._model, max_tokens=512, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text(resp)
             s, e = raw.find("{"), raw.rfind("}") + 1
             profile_data = json.loads(raw[s:e])
 
@@ -248,11 +251,13 @@ class MemoryManager:
         text = self._safe_text("\n".join(f"{m.role.value}: {m.content}" for m in to_compress))
         prompt = self._safe_text(f"用 2-3 句话总结以下对话的关键信息：\n{text}")
         try:
-            resp = await self._client.messages.create(
+            resp = await create_message(
+                self._client,
+                component="memory.summary",
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            summary = self._safe_text(resp.content[0].text).strip()
+            summary = self._safe_text(extract_text(resp)).strip()
         except Exception:
             summary = f"对话包含 {len(to_compress)} 条消息（摘要生成失败）"
 
