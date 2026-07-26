@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import chromadb
 
-from retrieval.chunking import Chunker, create_chunker
+from retrieval.chunking import Chunker, create_chunker, estimate_tokens
 from retrieval.embedding import EmbeddingConfig, EmbeddingProvider, create_embedding_provider
 
 logger = logging.getLogger(__name__)
@@ -45,10 +45,14 @@ class KnowledgeBase:
         embedding_provider: Optional[EmbeddingProvider] = None,
         client: Optional[Any] = None,
         load_default_docs: bool = True,
+        neighbor_radius: int = 1,
+        expansion_token_budget: int = 700,
     ):
         self._chunker = chunker or create_chunker(chunk_strategy)
         self._embedding_config = embedding_config or EmbeddingConfig.from_env()
         self._embedding = embedding_provider or create_embedding_provider(self._embedding_config)
+        self._neighbor_radius = max(0, int(neighbor_radius))
+        self._expansion_token_budget = max(1, int(expansion_token_budget))
         # 优先连接独立 ChromaDB 服务；Embedding 始终由应用端显式生成。
         self._use_server = False
         if client is not None:
@@ -143,7 +147,7 @@ class KnowledgeBase:
                 results["metadatas"][0],
                 results["distances"][0],
             ):
-                items.append({
+                item = {
                     "title":    meta.get("title", ""),
                     "content":  doc,
                     "score":    round(1.0 - dist, 4),  # ChromaDB 返回距离，转为相似度
@@ -157,9 +161,67 @@ class KnowledgeBase:
                     "token_count": meta.get("token_count", 0),
                     "previous_chunk_id": meta.get("previous_chunk_id", ""),
                     "next_chunk_id": meta.get("next_chunk_id", ""),
-                })
+                }
+                items.append(self._expand_with_neighbors(item))
 
         return items
+
+    def _expand_with_neighbors(self, item: Dict[str, Any]) -> Dict[str, Any]:
+        """回填命中块邻居，避免证据刚好被切分边界截断。"""
+        if self._neighbor_radius <= 0 or not hasattr(self._collection, "get"):
+            return item
+
+        ids: List[str] = [str(item.get("chunk_id", ""))]
+        cursor = str(item.get("previous_chunk_id", ""))
+        for _ in range(self._neighbor_radius):
+            if not cursor or cursor in ids:
+                break
+            ids.insert(0, cursor)
+            cursor = ""
+        cursor = str(item.get("next_chunk_id", ""))
+        for _ in range(self._neighbor_radius):
+            if not cursor or cursor in ids:
+                break
+            ids.append(cursor)
+            cursor = ""
+        if len(ids) <= 1:
+            return item
+
+        try:
+            related = self._collection.get(ids=ids, include=["documents", "metadatas"])
+            documents = related.get("documents") or []
+            metadatas = related.get("metadatas") or []
+            by_id = {
+                str(meta.get("chunk_id", "")): (doc, meta)
+                for doc, meta in zip(documents, metadatas)
+                if isinstance(meta, dict)
+            }
+            parts: List[str] = []
+            used_ids: List[str] = []
+            token_count = 0
+            for chunk_id in ids:
+                doc_meta = by_id.get(chunk_id)
+                if not doc_meta:
+                    continue
+                doc, _meta = doc_meta
+                text = str(doc or "").strip()
+                next_tokens = estimate_tokens(text)
+                if parts and token_count + next_tokens > self._expansion_token_budget:
+                    break
+                if text:
+                    parts.append(text)
+                    used_ids.append(chunk_id)
+                    token_count += next_tokens
+            if len(parts) > 1:
+                expanded = dict(item)
+                expanded["content"] = "\n\n".join(parts)
+                expanded["token_count"] = token_count
+                expanded["expanded_context"] = True
+                expanded["source_chunk_ids"] = used_ids
+                return expanded
+        except Exception as ex:
+            logger.debug("邻块回填失败，保留原始命中: %s", ex)
+        return item
 
     @property
     def doc_count(self) -> int:

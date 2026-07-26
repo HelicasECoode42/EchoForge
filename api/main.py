@@ -5,6 +5,7 @@ EchoMind 智能客服系统 — FastAPI 入口
 所有核心组件在 lifespan 中初始化，通过环境变量配置。
 """
 import asyncio
+import json
 import logging
 import os
 import pathlib
@@ -23,6 +24,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
 
@@ -142,6 +144,8 @@ async def lifespan(app: FastAPI):
         chunk_strategy=os.getenv("CHUNK_STRATEGY", "structure_token"),
         embedding_config=embedding_config,
         embedding_provider=embedding_provider,
+        neighbor_radius=int(os.getenv("RAG_NEIGHBOR_RADIUS", "1")),
+        expansion_token_budget=int(os.getenv("RAG_EXPANSION_TOKEN_BUDGET", "700")),
     )
     logger.info(f"知识库已加载: {kb.doc_count} 个文档片段; embedding={kb.embedding_info}")
 
@@ -254,21 +258,47 @@ def _create_chat_graph(trace_store):
 
     async def load_memory(state: Dict[str, Any]):
         req: ChatRequest = state["request"]
-        memory_context = await _memory.get_context(req.user_id, state["conv_id"], query=req.message)
+        # Memory and knowledge retrieval are independent reads. Prepare them
+        # together so their latency is max(memory_ms, retrieval_ms), not the
+        # sum of both. The existing graph node names remain stable for replay.
+        memory_task = asyncio.create_task(
+            _memory.get_context(req.user_id, state["conv_id"], query=req.message)
+        )
+        knowledge_task = (
+            asyncio.create_task(_build_knowledge_context(req.message))
+            if _should_use_knowledge(req.message)
+            else None
+        )
+        if knowledge_task is not None:
+            memory_context, (knowledge_text, knowledge_used) = await asyncio.gather(
+                memory_task, knowledge_task
+            )
+        else:
+            memory_context = await memory_task
+            knowledge_text, knowledge_used = "", False
         history = [
             {"role": message.role.value, "content": message.content}
             for message in memory_context.recent_messages[-5:]
         ] if memory_context.recent_messages else None
-        return {"memory_context": memory_context, "history": history}
+        return {
+            "memory_context": memory_context,
+            "history": history,
+            "knowledge_text": knowledge_text,
+            "knowledge_used": knowledge_used,
+            "knowledge_prepared": True,
+        }
 
     def decide_retrieval(state: Dict[str, Any]):
         req: ChatRequest = state["request"]
         return {"should_retrieve": _should_use_knowledge(req.message)}
 
     async def retrieve(state: Dict[str, Any]):
-        req: ChatRequest = state["request"]
-        knowledge_text, knowledge_used = await _build_knowledge_context(req.message)
-        return {"knowledge_text": knowledge_text, "knowledge_used": knowledge_used}
+        # Retrieval is prepared concurrently by load_memory. Keep this node as
+        # an explicit graph checkpoint for trace/replay compatibility.
+        return {
+            "knowledge_text": state.get("knowledge_text", ""),
+            "knowledge_used": bool(state.get("knowledge_used", False)),
+        }
 
     async def execute_agent(state: Dict[str, Any]):
         req: ChatRequest = state["request"]
@@ -282,7 +312,12 @@ def _create_chat_graph(trace_store):
             context="\n\n".join(part for part in context_parts if part),
             history=state.get("history"),
         )
-        return {"orchestrator_result": await _orchestrator.run(request)}
+        return {
+            "orchestrator_result": await _orchestrator.run(
+                request,
+                progress_sink=state.get("progress_sink"),
+            )
+        }
 
     async def persist_memory(state: Dict[str, Any]):
         req: ChatRequest = state["request"]
@@ -380,6 +415,67 @@ async def chat(req: ChatRequest):
         pipeline_total_latency_ms=round(graph_result.trace.total_latency_ms, 1),
         pipeline_timings_ms=graph_result.trace.node_timings_ms,
     )
+
+
+@app.post("/chat/stream", tags=["聊天"])
+async def chat_stream(req: ChatRequest):
+    """Stream final Agent text as SSE events while running the same graph."""
+    if _chat_graph is None:
+        raise HTTPException(503, "服务未就绪")
+
+    conv_id = req.conv_id or str(uuid.uuid4())
+    events: asyncio.Queue = asyncio.Queue()
+
+    async def emit(event: str, data: Dict[str, Any]):
+        await events.put((event, data))
+
+    async def sink(text: str):
+        await emit("token", {"text": text})
+
+    async def run_graph():
+        await emit("started", {"conv_id": conv_id})
+        try:
+            result = await _chat_graph.run({
+                "request": req,
+                "conv_id": conv_id,
+                "progress_sink": sink,
+            })
+            if result.trace.stop_reason != "completed" or "orchestrator_result" not in result.state:
+                await emit("error", {
+                    "message": "Agent pipeline did not complete",
+                    "graph_trace_id": result.trace.trace_id,
+                    "stop_reason": result.trace.stop_reason,
+                })
+                return
+            agent_result = result.state["orchestrator_result"]
+            await emit("complete", {
+                "conv_id": conv_id,
+                "trace_id": agent_result.route_trace.trace_id if agent_result.route_trace else None,
+                "graph_trace_id": result.trace.trace_id,
+                "agent_type": agent_result.agent_type.value,
+                "intent": agent_result.intent.value if agent_result.intent else "other",
+                "latency_ms": round(agent_result.latency_ms, 1),
+            })
+        except Exception as ex:
+            logger.exception("chat stream failed")
+            await emit("error", {"message": str(ex)})
+        finally:
+            await events.put((None, None))
+
+    task = asyncio.create_task(run_graph())
+
+    async def event_generator():
+        try:
+            while True:
+                event, data = await events.get()
+                if event is None:
+                    break
+                yield f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/traces/recent", tags=["路由证据"])
@@ -610,7 +706,7 @@ async def run_eval(body: Optional[EvalRunInput] = None):
     """运行内置评测用例，返回评测报告。"""
     if _evaluator is None:
         raise HTTPException(503, "服务未就绪")
-    from evaluation.evaluator import DEFAULT_DIALOG_CASES, DEFAULT_INTENT_CASES, IntentTestCase
+    from evaluation.evaluator import DEFAULT_DIALOG_CASES, IntentTestCase, load_intent_cases
 
     if body and body.intent_cases is not None:
         intent_cases = [
@@ -622,7 +718,7 @@ async def run_eval(body: Optional[EvalRunInput] = None):
             for c in body.intent_cases
         ]
     else:
-        intent_cases = DEFAULT_INTENT_CASES
+        intent_cases, intent_dataset = load_intent_cases(os.getenv("INTENT_EVAL_DATASET"))
 
     if body and body.dialog_cases is not None:
         dialog_cases = [
@@ -643,6 +739,12 @@ async def run_eval(body: Optional[EvalRunInput] = None):
         "avg_scores":      report.avg_scores,
         "regressions":     report.regressions,
         "recommendations": report.recommendations,
+        "intent_dataset": intent_dataset if not (body and body.intent_cases is not None) else {
+            "dataset_id": "request_payload",
+            "source": "caller_supplied",
+            "label_status": "unknown",
+            "case_count": len(intent_cases),
+        },
         "results": [
             {
                 "test_id": r.test_id,

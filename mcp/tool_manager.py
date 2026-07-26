@@ -22,6 +22,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
 from anthropic import AsyncAnthropic
+from core.model_response import create_message, extract_text
 
 logger = logging.getLogger(__name__)
 
@@ -289,11 +290,13 @@ class MCPToolManager:
 返回 JSON 数组，例如: ["子查询1", "子查询2", "子查询3"]"""
         prompt = self._clean_text(prompt)
         try:
-            resp = await self._client.messages.create(
+            resp = await create_message(
+                self._client,
+                component="retrieval.rewrite",
                 model=self._model, max_tokens=256, temperature=0.3,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text(resp)
             s, e = raw.find("["), raw.rfind("]") + 1
             queries = json.loads(raw[s:e])
             # 原始查询也保留，去重
@@ -442,11 +445,13 @@ class MCPToolManager:
         prompt = self._clean_text(prompt)
 
         try:
-            resp = await self._client.messages.create(
+            resp = await create_message(
+                self._client,
+                component="retrieval.rerank",
                 model=self._model, max_tokens=256, temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text
+            raw = extract_text(resp)
             s, e = raw.find("["), raw.rfind("]") + 1
             order: List[int] = json.loads(raw[s:e])
             reranked = [items[i] for i in order if 0 <= i < len(items)]

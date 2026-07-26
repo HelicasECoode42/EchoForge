@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from anthropic import AsyncAnthropic
 
 from core.intent_recognizer import IntentCategory, IntentRecognizer, UrgencyLevel
+from core.model_response import create_message, extract_text, provider_extra_body
 from evidence.route_trace import JsonlRouteTraceStore, RouteStep, RouteTrace, RoutingBudget
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,32 @@ class BaseAgent:
                 latency_ms=ms,
             )
 
+    async def handle_stream(self, req: Request, progress_sink) -> AgentResponse:
+        """Stream final-agent text while preserving the normal result contract."""
+        t0 = time.monotonic()
+        self.stats.total += 1
+        try:
+            content = await self._call_llm_stream(req, progress_sink)
+            ms = (time.monotonic() - t0) * 1000
+            self.stats.success += 1
+            self.stats.total_ms += ms
+            return AgentResponse(
+                agent_type=self.agent_type,
+                content=content,
+                success=True,
+                latency_ms=ms,
+                escalate=self._needs_escalation(content),
+            )
+        except Exception as ex:
+            ms = (time.monotonic() - t0) * 1000
+            self.stats.total_ms += ms
+            logger.error(f"{self.agent_type.value} 流式处理失败: {ex}")
+            return AgentResponse(
+                agent_type=self.agent_type,
+                content="抱歉，处理您的请求时出现问题，请稍后重试。",
+                success=False,
+                latency_ms=ms,
+            )
     async def _call_llm(self, req: Request) -> str:
         def _clean(s: str) -> str:
             return s.encode("utf-8", errors="ignore").decode("utf-8")
@@ -147,16 +174,52 @@ class BaseAgent:
             messages.append({"role": "assistant", "content": "好的，我已了解背景信息。"})
         messages.append({"role": "user", "content": _clean(req.message)})
 
-        resp = await self._client.messages.create(
+        resp = await create_message(
+            self._client,
+            component=f"agent.{self.agent_type.value}",
             model=self._model,
             max_tokens=1024,
             system=self.system_prompt,
             messages=messages,
         )
-        return resp.content[0].text
+        return extract_text(resp)
+
+    async def _call_llm_stream(self, req: Request, progress_sink) -> str:
+        def _clean(s: str) -> str:
+            return s.encode("utf-8", errors="ignore").decode("utf-8")
+
+        messages = []
+        if req.context:
+            messages.append({"role": "user", "content": f"[背景信息]\n{_clean(req.context)}"})
+            messages.append({"role": "assistant", "content": "好的，我已了解背景信息。"})
+        messages.append({"role": "user", "content": _clean(req.message)})
+
+        chunks = []
+        stream_kwargs = {}
+        extra_body = provider_extra_body()
+        if extra_body is not None:
+            stream_kwargs["extra_body"] = extra_body
+        async with self._client.messages.stream(
+            model=self._model,
+            max_tokens=1024,
+            system=self.system_prompt,
+            messages=messages,
+            **stream_kwargs,
+        ) as stream:
+            async for text in stream.text_stream:
+                if text:
+                    chunks.append(text)
+                    await progress_sink(text)
+            final_message = await stream.get_final_message()
+
+        # Some compatible providers may emit no text events but still return
+        # a valid final response; normalize that response as a fallback.
+        content = "".join(chunks).strip()
+        return content or extract_text(final_message)
 
     def _needs_escalation(self, content: str) -> bool:
         """检测 Agent 是否建议升级（简单关键词检测）。"""
+        content = content or ""
         keywords = ["转人工", "人工客服", "escalate", "specialist", "无法处理"]
         return any(kw in content for kw in keywords)
 
@@ -240,7 +303,7 @@ class AgentOrchestrator:
 
     # ── 主入口 ────────────────────────────────────────────────────────────────
 
-    async def run(self, req: Request) -> OrchestratorResult:
+    async def run(self, req: Request, progress_sink=None) -> OrchestratorResult:
         """
         处理一次请求的完整流程：
           意图识别 → 路由选 Agent → 执行 → 检查升级 → 返回结果
@@ -267,7 +330,7 @@ class AgentOrchestrator:
             urgency=req.urgency.name.lower() if req.urgency else "low",
             budget=budget,
         )
-        response, trace = await self._execute_bounded(req, agent_type, budget, trace)
+        response, trace = await self._execute_bounded(req, agent_type, budget, trace, progress_sink=progress_sink)
 
         # 4. 升级检查
         escalated = False
@@ -400,6 +463,7 @@ class AgentOrchestrator:
         agent_type: AgentType,
         budget: RoutingBudget,
         trace: RouteTrace,
+        progress_sink=None,
     ) -> Tuple[AgentResponse, RouteTrace]:
         """Execute with explicit attempt, reroute, and latency limits."""
         started = time.monotonic()
@@ -436,7 +500,11 @@ class AgentOrchestrator:
                 break
 
             score = agent.stats.routing_score() if hasattr(agent, "stats") else None
-            response = await agent.handle(req)
+            response = (
+                await agent.handle_stream(req, progress_sink)
+                if progress_sink is not None
+                else await agent.handle(req)
+            )
             trace.attempts += 1
             last_response = response
             trace.steps.append(RouteStep(

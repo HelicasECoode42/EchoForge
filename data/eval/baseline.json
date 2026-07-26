@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-07-26T22:25:01.808766",
+  "total": 2,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "avg_scores": {
+    "relevance": 0.5,
+    "accuracy": 0.5,
+    "completeness": 0.5,
+    "helpfulness": 0.5,
+    "intent_accuracy": 0.0
+  },
+  "regressions": [],
+  "recommendations": [
+    "意图识别准确率 < 90%：增加 Few-shot 示例，或对低 F1 的意图类别补充训练数据",
+    "相关性偏低：检查 Agent system_prompt，确保 Agent 聚焦于用户问题",
+    "完整性偏低：Agent 可能过早结束回答，考虑在 prompt 中要求提供完整解决方案",
+    "有用性偏低：回答可能过于抽象，考虑要求 Agent 提供具体操作步骤"
+  ],
+  "results": [
+    {
+      "test_id": "intent_recognition",
+      "passed": false,
+      "scores": {
+        "accuracy": 0.0,
+        "macro_f1": 0.0
+      },
+      "detail": "准确率 0.0%，Macro-F1 0.000",
+      "metadata": {
+        "total": 1,
+        "correct": 0,
+        "cases": [
+          {
+            "message": "string",
+            "expected": "string",
+            "predicted": "account",
+            "confidence": 0.0,
+            "reasoning": "LLM 失败"
+          }
+        ]
+      }
+    },
+    {
+      "test_id": "dialog_0",
+      "passed": false,
+      "scores": {
+        "relevance": 0.5,
+        "accuracy": 0.5,
+        "completeness": 0.5,
+        "helpfulness": 0.5,
+        "overall": 0.5
+      },
+      "detail": "Q: string... → 综合评分 0.500",
+      "metadata": {
+        "question": "string",
+        "response": "抱歉，处理您的请求时出现问题，请稍后重试。",
+        "agent_type": "general",
+        "intent": "account",
+        "turn": 0,
+        "conv_id": "string",
+        "judge_failed": true,
+        "judge_error": "Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'invalid x-api-key'}, 'request_id': 'req_011CdQpepntTfsyKYoUn5hsT'}"
+      }
+    }
+  ]
+}
