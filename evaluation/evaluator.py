@@ -318,7 +318,7 @@ class EndToEndEvaluator:
             results=results,
         )
         self._history.append(report)
-        self._save_baseline(report)
+        await asyncio.to_thread(self._save_baseline, report)
         return report
 
     async def _evaluate_dialog_case(self, case: Dict[str, Any], case_idx: int) -> List[EvalResult]:

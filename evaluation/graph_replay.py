@@ -32,7 +32,7 @@ def _build_replay_graph(case: Dict[str, Any]) -> ExecutionGraph:
         async def run(state: Dict[str, Any]):
             index = calls.get(name, 0)
             calls[name] = index + 1
-            planned = outcomes.get(name, [True])
+            planned = outcomes.get(name) or [True]
             success = planned[index] if index < len(planned) else planned[-1]
             if not success:
                 raise RuntimeError(f"deterministic_{name}_failure")

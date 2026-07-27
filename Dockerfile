@@ -68,7 +68,18 @@ FROM dependencies AS development
 COPY . .
 
 RUN mkdir -p /app/data/chroma /app/logs /app/config /app/tests && \
-    chmod -R 777 /app/data /app/logs
+    useradd -m -u 1000 echomind && \
+    mkdir -p /home/echomind/.cache && \
+    if [ -d /root/.cache/fastembed ]; then cp -R /root/.cache/fastembed /home/echomind/.cache/fastembed; else echo "Warning: fastembed cache not found; runtime download may be required"; fi && \
+    chown -R echomind:echomind /app/data /app/logs /home/echomind/.cache
+
+USER echomind
+
+ENV EMBEDDING_PROVIDER=fastembed \
+    EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
+    EMBEDDING_DIMENSIONS=512 \
+    EMBEDDING_DISTANCE=cosine \
+    EMBEDDING_CACHE_DIR=/home/echomind/.cache/fastembed
 
 EXPOSE 8000
 

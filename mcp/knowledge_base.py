@@ -12,7 +12,9 @@ ChromaDB 在这里的角色：
   两者是不同的 collection，互不干扰。
 """
 import hashlib
+import asyncio
 import logging
+import threading
 from typing import Any, Dict, List, Optional
 
 import chromadb
@@ -53,6 +55,7 @@ class KnowledgeBase:
         self._embedding = embedding_provider or create_embedding_provider(self._embedding_config)
         self._neighbor_radius = max(0, int(neighbor_radius))
         self._expansion_token_budget = max(1, int(expansion_token_budget))
+        self._collection_lock = threading.RLock()
         # 优先连接独立 ChromaDB 服务；Embedding 始终由应用端显式生成。
         self._use_server = False
         if client is not None:
@@ -83,7 +86,7 @@ class KnowledgeBase:
         self._validate_collection_metadata()
 
         # 如果知识库为空，导入默认文档
-        if load_default_docs and self._collection.count() == 0:
+        if load_default_docs and self._collection_call("count") == 0:
             self._load_default_docs()
 
     # ── 文档管理 ──────────────────────────────────────────────────────────────
@@ -118,7 +121,8 @@ class KnowledgeBase:
 
         if ids:
             embeddings = self._embedding.embed_documents(docs)
-            self._collection.upsert(
+            self._collection_call(
+                "upsert",
                 ids=ids,
                 documents=docs,
                 metadatas=metas,
@@ -135,7 +139,8 @@ class KnowledgeBase:
         应用端将 query 转为固定版本向量，ChromaDB 只负责余弦近邻检索。
         """
         query_embedding = self._embedding.embed_queries([query])[0]
-        results = self._collection.query(
+        results = self._collection_call(
+            "query",
             query_embeddings=[query_embedding],
             n_results=top_k,
         )
@@ -172,23 +177,17 @@ class KnowledgeBase:
             return item
 
         ids: List[str] = [str(item.get("chunk_id", ""))]
-        cursor = str(item.get("previous_chunk_id", ""))
-        for _ in range(self._neighbor_radius):
-            if not cursor or cursor in ids:
-                break
-            ids.insert(0, cursor)
-            cursor = ""
-        cursor = str(item.get("next_chunk_id", ""))
-        for _ in range(self._neighbor_radius):
-            if not cursor or cursor in ids:
-                break
-            ids.append(cursor)
-            cursor = ""
+        try:
+            previous_ids = self._walk_neighbor_ids(item.get("previous_chunk_id", ""), "previous_chunk_id", ids)
+            next_ids = self._walk_neighbor_ids(item.get("next_chunk_id", ""), "next_chunk_id", ids + previous_ids)
+            ids = list(reversed(previous_ids)) + ids + next_ids
+        except Exception as ex:
+            logger.debug("邻块链路读取失败，保留可用邻居: %s", ex)
         if len(ids) <= 1:
             return item
 
         try:
-            related = self._collection.get(ids=ids, include=["documents", "metadatas"])
+            related = self._collection_call("get", ids=ids, include=["documents", "metadatas"])
             documents = related.get("documents") or []
             metadatas = related.get("metadatas") or []
             by_id = {
@@ -223,9 +222,34 @@ class KnowledgeBase:
             logger.debug("邻块回填失败，保留原始命中: %s", ex)
         return item
 
+    def _walk_neighbor_ids(self, start_id: Any, link_key: str, known_ids: List[str]) -> List[str]:
+        """Follow persisted chunk links up to the configured radius."""
+        cursor = str(start_id or "")
+        discovered: List[str] = []
+        known = set(known_ids)
+        for _ in range(self._neighbor_radius):
+            if not cursor or cursor in known:
+                break
+            related = self._collection_call("get", ids=[cursor], include=["metadatas"])
+            metadatas = related.get("metadatas") or []
+            if not metadatas or not isinstance(metadatas[0], dict):
+                break
+            discovered.append(cursor)
+            known.add(cursor)
+            cursor = str(metadatas[0].get(link_key, "") or "")
+        return discovered
+
     @property
     def doc_count(self) -> int:
-        return self._collection.count()
+        return self._collection_call("count")
+
+    def _collection_call(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        """Serialize Chroma calls when using the embedded SQLite/DuckDB client."""
+        lock = getattr(self, "_collection_lock", None)
+        if lock is None:  # lightweight test doubles created with object.__new__
+            return getattr(self._collection, method)(*args, **kwargs)
+        with lock:
+            return getattr(self._collection, method)(*args, **kwargs)
 
     @property
     def chunk_strategy(self) -> str:
@@ -249,7 +273,7 @@ class KnowledgeBase:
         """
         query = params.get("query", "")
         top_k = params.get("top_k", 5)
-        return self.search(query, top_k=top_k)
+        return await asyncio.to_thread(self.search, query, top_k=top_k)
 
     # ── 内部方法 ──────────────────────────────────────────────────────────────
 

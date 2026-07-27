@@ -54,12 +54,40 @@ _evaluator    = None
 _trace_store  = None
 _graph_trace_store = None
 _chat_graph   = None
+_background_tasks: set[asyncio.Task[Any]] = set()
+_PLACEHOLDER_SECRET_PREFIXES = ("your-", "replace-", "change-me", "placeholder")
+
+
+def _track_background_task(coro, *, name: str) -> asyncio.Task[Any]:
+    """Keep fire-and-forget work alive and surface every failure."""
+    task = asyncio.create_task(coro, name=name)
+    _background_tasks.add(task)
+
+    def task_done(done: asyncio.Task[Any]) -> None:
+        _background_tasks.discard(done)
+        if done.cancelled():
+            return
+        error = done.exception()
+        if error is not None:
+            logger.error(
+                "background task failed name=%s",
+                done.get_name(),
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+    task.add_done_callback(task_done)
+    return task
 
 
 def _anthropic_cfg() -> Dict[str, Any]:
     key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not key:
-        raise RuntimeError("未设置 ANTHROPIC_API_KEY")
+    if not key or key.strip().lower().startswith(_PLACEHOLDER_SECRET_PREFIXES):
+        raise RuntimeError("ANTHROPIC_API_KEY 未配置或仍为示例占位符")
+    if os.getenv("APP_ENV", "development").lower() == "production":
+        for name in ("REDIS_PASSWORD", "SECRET_KEY", "JWT_SECRET_KEY"):
+            value = os.getenv(name, "").strip()
+            if not value or value.lower().startswith(_PLACEHOLDER_SECRET_PREFIXES) or "change_this" in value.lower():
+                raise RuntimeError(f"生产环境变量 {name} 未配置或仍为示例占位符")
     cfg: Dict[str, Any] = {
         "api_key":  key,
         "model":    os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
@@ -203,10 +231,15 @@ async def lifespan(app: FastAPI):
     _chat_graph = _create_chat_graph(_graph_trace_store)
 
     logger.info("EchoForge 已就绪")
-    yield
-
-    await _monitor.stop()
-    logger.info("EchoForge 已关闭")
+    try:
+        yield
+    finally:
+        await _monitor.stop()
+        for task in list(_background_tasks):
+            task.cancel()
+        if _background_tasks:
+            await asyncio.gather(*list(_background_tasks), return_exceptions=True)
+        logger.info("EchoForge 已关闭")
 
 
 # ── FastAPI ───────────────────────────────────────────────────────────────────
@@ -217,11 +250,22 @@ app = FastAPI(
     docs_url="/docs",
 )
 
+
+def _csv_env(name: str, default: str) -> List[str]:
+    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
+
+
+cors_origins = _csv_env("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080")
+cors_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+if cors_credentials and "*" in cors_origins:
+    raise RuntimeError("CORS_ORIGINS cannot contain '*' when credentials are enabled")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=cors_credentials,
+    allow_methods=_csv_env("CORS_ALLOW_METHODS", "GET,POST,OPTIONS"),
+    allow_headers=_csv_env("CORS_ALLOW_HEADERS", "Authorization,Content-Type"),
 )
 
 
@@ -261,20 +305,20 @@ def _create_chat_graph(trace_store):
         # Memory and knowledge retrieval are independent reads. Prepare them
         # together so their latency is max(memory_ms, retrieval_ms), not the
         # sum of both. The existing graph node names remain stable for replay.
-        memory_task = asyncio.create_task(
-            _memory.get_context(req.user_id, state["conv_id"], query=req.message)
-        )
-        knowledge_task = (
-            asyncio.create_task(_build_knowledge_context(req.message))
-            if _should_use_knowledge(req.message)
-            else None
-        )
-        if knowledge_task is not None:
-            memory_context, (knowledge_text, knowledge_used) = await asyncio.gather(
-                memory_task, knowledge_task
+        async with asyncio.TaskGroup() as group:
+            memory_task = group.create_task(
+                _memory.get_context(req.user_id, state["conv_id"], query=req.message)
             )
+            knowledge_task = (
+                group.create_task(_build_knowledge_context(req.message))
+                if _should_use_knowledge(req.message)
+                else None
+            )
+        if knowledge_task is not None:
+            memory_context = memory_task.result()
+            knowledge_text, knowledge_used = knowledge_task.result()
         else:
-            memory_context = await memory_task
+            memory_context = memory_task.result()
             knowledge_text, knowledge_used = "", False
         history = [
             {"role": message.role.value, "content": message.content}
@@ -324,7 +368,10 @@ def _create_chat_graph(trace_store):
         result = state["orchestrator_result"]
         await _memory.add_message(req.user_id, state["conv_id"], MsgRole.USER, req.message)
         await _memory.add_message(req.user_id, state["conv_id"], MsgRole.ASSISTANT, result.response)
-        asyncio.create_task(_memory.update_profile(req.user_id, state["conv_id"]))
+        _track_background_task(
+            _memory.update_profile(req.user_id, state["conv_id"]),
+            name=f"update-profile:{state['conv_id']}",
+        )
         return {"memory_persisted": True}
 
     return ExecutionGraph(
@@ -462,7 +509,7 @@ async def chat_stream(req: ChatRequest):
         finally:
             await events.put((None, None))
 
-    task = asyncio.create_task(run_graph())
+    task = _track_background_task(run_graph(), name=f"chat-stream:{conv_id}")
 
     async def event_generator():
         try:
@@ -483,7 +530,7 @@ async def recent_route_traces(limit: int = 20):
     """读取最近路由证据；只包含消息哈希和决策元数据，不返回用户原文。"""
     if _trace_store is None:
         raise HTTPException(503, "路由证据存储未初始化")
-    return {"items": _trace_store.recent(limit)}
+    return {"items": await asyncio.to_thread(_trace_store.recent, limit)}
 
 
 @app.get("/graph", tags=["执行图"])
@@ -499,7 +546,7 @@ async def recent_graph_traces(limit: int = 20):
     """Return paths and node timings only; graph state and prompts are excluded."""
     if _graph_trace_store is None:
         raise HTTPException(503, "执行图证据存储未初始化")
-    return {"items": _graph_trace_store.recent(limit)}
+    return {"items": await asyncio.to_thread(_graph_trace_store.recent, limit)}
 
 
 async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, bool]:

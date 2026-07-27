@@ -334,7 +334,7 @@ class MCPToolManager:
         if not initial.success or not isinstance(initial.data, list):
             return initial
 
-        if adaptive and self._is_confident_retrieval(initial.data, top_k, policy):
+        if adaptive and self._is_confident_retrieval(initial.data, policy):
             return ToolResult(
                 success=True,
                 data=initial.data[:top_k],
@@ -409,10 +409,11 @@ class MCPToolManager:
     @staticmethod
     def _is_confident_retrieval(
         items: List[Any],
-        top_k: int,
         policy: RetrievalPolicy,
     ) -> bool:
-        if len(items) < min(top_k, 2):
+        # Confidence depends on a top-1/top-2 margin regardless of requested
+        # response size; a single result has no comparable second score.
+        if len(items) < 2:
             return False
         if not all(isinstance(item, dict) and isinstance(item.get("score"), (int, float)) for item in items[:2]):
             return False

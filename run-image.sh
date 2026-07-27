@@ -99,10 +99,17 @@ run_container() {
 
     local detach=false
     local env_file=".env"
-    local custom_ports=""
-    local custom_volumes=""
     local container_name="$CONTAINER_NAME"
     local restart_policy="no"
+    local -a custom_ports=()
+    local -a custom_volumes=()
+
+    require_option_value() {
+        if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+            print_error "选项 $1 缺少参数"
+            exit 2
+        fi
+    }
 
     # 解析参数
     while [[ $# -gt 0 ]]; do
@@ -112,27 +119,38 @@ run_container() {
                 shift
                 ;;
             --env-file)
+                require_option_value "$@"
                 env_file="$2"
                 shift 2
                 ;;
             --ports|-p)
-                custom_ports="-p $2"
+                require_option_value "$@"
+                custom_ports+=("-p" "$2")
                 shift 2
                 ;;
             --volume|-v)
-                custom_volumes="$custom_volumes -v $2"
+                require_option_value "$@"
+                custom_volumes+=("-v" "$2")
                 shift 2
                 ;;
             --name)
+                require_option_value "$@"
                 container_name="$2"
                 shift 2
                 ;;
             --restart)
+                require_option_value "$@"
                 restart_policy="$2"
                 shift 2
                 ;;
+            --help|-h)
+                print_info "用法: $0 run [选项]"
+                print_info "选项: --detach|-d, --env-file, --ports|-p, --volume|-v, --name, --restart"
+                exit 0
+                ;;
             *)
-                shift
+                print_error "未知选项: $1 (unknown option)"
+                exit 2
                 ;;
         esac
     done
@@ -143,20 +161,22 @@ run_container() {
     if [ ! -f "$env_file" ]; then
         print_warn "环境文件 $env_file 不存在，使用默认配置"
         env_file=""
-    else
-        env_file="--env-file $env_file"
     fi
 
     # 基础配置
     local image_tag="${REGISTRY}${IMAGE_NAME}:${VERSION}"
-    local default_ports="-p ${API_PORT}:8000 -p ${PROMETHEUS_PORT}:9090"
-    local default_volumes="-v ${DATA_DIR}:/app/data -v ${LOGS_DIR}:/app/logs -v ${CONFIG_DIR}:/app/config"
+    local -a port_args=("-p" "${API_PORT}:8000" "-p" "${PROMETHEUS_PORT}:9090")
+    local -a volume_args=(
+        "-v" "${DATA_DIR}:/app/data"
+        "-v" "${LOGS_DIR}:/app/logs"
+        "-v" "${CONFIG_DIR}:/app/config"
+    )
 
     # 根据模式调整配置
     case $mode in
         dev)
             print_info "运行开发模式容器"
-            default_ports="$default_ports -p 5678:5678"  # 添加调试端口
+            port_args+=("-p" "5678:5678")  # 添加调试端口
             restart_policy="no"
             ;;
         test)
@@ -172,34 +192,32 @@ run_container() {
             ;;
     esac
 
-    # 构建运行命令
-    local run_cmd="docker run"
+    # 使用参数数组构建命令，确保用户输入始终作为单个参数传给 Docker。
+    local -a run_args=("run")
 
     if [ "$detach" = true ]; then
-        run_cmd="$run_cmd -d"
+        run_args+=("-d")
     fi
-
-    run_cmd="$run_cmd --name $container_name"
-    run_cmd="$run_cmd --restart $restart_policy"
-    run_cmd="$run_cmd $default_ports $custom_ports"
-    run_cmd="$run_cmd $default_volumes $custom_volumes"
-    run_cmd="$run_cmd $env_file"
-    run_cmd="$run_cmd $image_tag"
+    run_args+=("--name" "$container_name" "--restart" "$restart_policy")
+    run_args+=("${port_args[@]}" "${custom_ports[@]}")
+    run_args+=("${volume_args[@]}" "${custom_volumes[@]}")
+    if [ -n "$env_file" ]; then
+        run_args+=("--env-file" "$env_file")
+    fi
+    run_args+=("$image_tag")
 
     print_info "启动容器: $container_name"
     print_info "镜像: $image_tag"
 
     # 检查容器是否已存在
-    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+    if docker container inspect "$container_name" >/dev/null 2>&1; then
         print_warn "容器 $container_name 已存在，先停止并删除"
         docker stop "$container_name" 2>/dev/null || true
         docker rm "$container_name" 2>/dev/null || true
     fi
 
     # 运行容器
-    eval $run_cmd
-
-    if [ $? -eq 0 ]; then
+    if docker "${run_args[@]}"; then
         print_info "✓ 容器启动成功"
         print_info "API地址: http://localhost:${API_PORT}"
         print_info "Prometheus: http://localhost:${PROMETHEUS_PORT}"

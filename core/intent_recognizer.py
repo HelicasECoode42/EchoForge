@@ -112,6 +112,7 @@ class IntentRecognizer:
         self._embedding_enabled = True
 
         self._tpl_embeddings: Dict[IntentCategory, List[List[float]]] = {}
+        self._template_embedding_lock = asyncio.Lock()
         self._cache: Dict[str, IntentResult] = {}
         self.cache_hits   = 0
         self.cache_misses = 0
@@ -357,14 +358,21 @@ class IntentRecognizer:
         missing = [cat for cat in _TEMPLATES if cat not in self._tpl_embeddings]
         if not missing:
             return
+        async with self._template_embedding_lock:
+            # 双重检查避免并发首次请求重复计算整套模板。
+            missing = [cat for cat in _TEMPLATES if cat not in self._tpl_embeddings]
+            if not missing:
+                return
 
-        all_texts = [t for cat in missing for t in _TEMPLATES[cat]]
-        vecs = [await self._embed_text(text) for text in all_texts]
-        idx = 0
-        for cat in missing:
-            n = len(_TEMPLATES[cat])
-            self._tpl_embeddings[cat] = vecs[idx: idx + n]
-            idx += n
+            all_texts = [t for cat in missing for t in _TEMPLATES[cat]]
+            # Provider 原生支持批量编码；一次跨线程批处理比 27 次串行
+            # await 更快，也避免共享 provider 锁的重复争用。
+            vecs = await asyncio.to_thread(self._embedding.embed_queries, all_texts)
+            idx = 0
+            for cat in missing:
+                n = len(_TEMPLATES[cat])
+                self._tpl_embeddings[cat] = vecs[idx: idx + n]
+                idx += n
 
     async def _embed_text(self, text: str) -> List[float]:
         """Generate a real semantic vector off the event loop."""

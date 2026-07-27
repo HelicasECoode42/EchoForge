@@ -60,6 +60,22 @@ create_directories() {
     print_info "目录创建完成"
 }
 
+# 校验指定环境文件中的关键生产凭证，不执行或 source 文件内容。
+validate_env_file() {
+    local env_path=$1
+    local anthropic_key redis_password
+    anthropic_key=$(awk -F= '/^ANTHROPIC_API_KEY=/{sub(/^[^=]*=/, ""); print; exit}' "$env_path")
+    redis_password=$(awk -F= '/^REDIS_PASSWORD=/{sub(/^[^=]*=/, ""); print; exit}' "$env_path")
+    if [ -z "$anthropic_key" ] || [[ "$anthropic_key" == your-* ]]; then
+        print_error "ANTHROPIC_API_KEY 未配置"
+        return 1
+    fi
+    if [ -z "$redis_password" ] || [[ "$redis_password" == replace-* ]] || [ ${#redis_password} -lt 16 ]; then
+        print_error "REDIS_PASSWORD 必须设置为至少 16 位的随机密码"
+        return 1
+    fi
+}
+
 # 函数：检查环境变量
 check_env_file() {
     print_info "检查环境变量配置..."
@@ -67,16 +83,28 @@ check_env_file() {
     if [ ! -f "$ENV_FILE" ]; then
         print_warn ".env 文件不存在，从 .env.example 创建..."
 
+        local example_file=""
         if [ -f ".env.example" ]; then
-            cp .env.example .env
+            example_file=".env.example"
+        elif [ -f ".env.example.env" ]; then
+            example_file=".env.example.env"
+        fi
+
+        if [ -n "$example_file" ]; then
+            cp "$example_file" .env
             print_info "已创建 .env 文件，请编辑配置"
-            print_warn "特别注意：请设置 ANTHROPIC_API_KEY"
+            print_error "请设置 ANTHROPIC_API_KEY 和强随机 REDIS_PASSWORD 后重新运行"
+            exit 1
         else
-            print_error ".env.example 文件不存在"
+            print_error "环境变量示例文件不存在"
             exit 1
         fi
     else
         print_info "环境变量配置文件已存在"
+    fi
+
+    if ! validate_env_file "$ENV_FILE"; then
+        exit 1
     fi
 }
 
@@ -223,6 +251,35 @@ restore_data() {
         exit 1
     fi
 
+    for required in dump.rdb .env chroma config; do
+        if [ ! -e "$backup_dir/$required" ]; then
+            print_error "备份不完整，缺少: $backup_dir/$required"
+            exit 1
+        fi
+    done
+    if [ ! -f "$backup_dir/dump.rdb" ] || [ ! -f "$backup_dir/.env" ] || \
+       [ ! -d "$backup_dir/chroma" ] || [ ! -d "$backup_dir/config" ]; then
+        print_error "备份中类型不正确 (dump.rdb/.env 应为文件, chroma/config 应为目录)"
+        exit 1
+    fi
+
+    # 在停止服务前完整复制配置，先证明备份可读且目标有足够空间。
+    local stage_dir recovery_dir
+    stage_dir=$(mktemp -d "./restore-stage.XXXXXX")
+    recovery_dir="backups/pre_restore_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$stage_dir/config"
+    if ! cp "$backup_dir/.env" "$stage_dir/.env" || \
+       ! cp -R "$backup_dir/config/." "$stage_dir/config/"; then
+        print_error "备份配置预检失败，未修改当前数据"
+        rm -rf "$stage_dir"
+        exit 1
+    fi
+    if ! validate_env_file "$stage_dir/.env"; then
+        print_error "备份环境变量未通过安全校验，未修改当前服务"
+        rm -rf "$stage_dir"
+        exit 1
+    fi
+
     print_warn "从 $backup_dir 恢复数据..."
     read -p "确认恢复？这将覆盖现有数据 (y/N): " -n 1 -r
     echo
@@ -231,22 +288,36 @@ restore_data() {
         # 停止服务
         docker-compose stop
 
-        # 恢复 Redis 数据
-        docker cp "$backup_dir/dump.rdb" echomind-redis:/data/
+        # 恢复服务数据；失败时保留当前配置并立即重新启动原服务。
+        if ! docker cp "$backup_dir/dump.rdb" echomind-redis:/data/ || \
+           ! docker cp "$backup_dir/chroma" echomind-chromadb:/chroma/; then
+            print_error "服务数据恢复失败，当前配置未修改"
+            rm -rf "$stage_dir"
+            docker-compose start || true
+            exit 1
+        fi
 
-        # 恢复 ChromaDB 数据
-        docker cp "$backup_dir/chroma" echomind-chromadb:/chroma/
-
-        # 恢复配置
-        cp "$backup_dir/.env" .env
-        rm -rf config
-        cp -r "$backup_dir/config" config
+        # 原配置先移动到可恢复目录，再原子切换已预检的新配置。
+        mkdir -p "$recovery_dir"
+        [ ! -e .env ] || mv .env "$recovery_dir/.env"
+        [ ! -e config ] || mv config "$recovery_dir/config"
+        if ! mv "$stage_dir/.env" .env || ! mv "$stage_dir/config" config; then
+            print_error "配置切换失败，正在恢复原配置"
+            [ ! -e .env ] || mv .env "$stage_dir/failed.env"
+            [ ! -e config ] || mv config "$stage_dir/failed-config"
+            [ ! -e "$recovery_dir/.env" ] || mv "$recovery_dir/.env" .env
+            [ ! -e "$recovery_dir/config" ] || mv "$recovery_dir/config" config
+            docker-compose start || true
+            exit 1
+        fi
+        rmdir "$stage_dir"
 
         # 启动服务
         docker-compose start
 
-        print_info "恢复完成"
+        print_info "恢复完成；原配置保存在 $recovery_dir"
     else
+        rm -rf "$stage_dir"
         print_info "恢复已取消"
     fi
 }
