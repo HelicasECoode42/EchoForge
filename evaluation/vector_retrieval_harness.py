@@ -126,6 +126,35 @@ def evaluate_vector_chunker(
         if metric.top_score >= fast_path_min_score
         and metric.score_margin >= fast_path_min_margin
     ]
+    if not metrics:
+        return {
+            "strategy": chunker.name,
+            "retriever": "fastembed_query_passage_plus_chroma_hnsw",
+            "embedding": embedding.config.metadata(),
+            "top_k": top_k,
+            "documents": len(dataset["documents"]),
+            "queries": 0,
+            "chunk_count": len(chunks),
+            "document_embedding_latency_ms": round(document_embedding_latency_ms, 3),
+            "vector_index_latency_ms": round(vector_index_latency_ms, 3),
+            "avg_query_embedding_latency_ms": 0.0,
+            "p95_query_embedding_latency_ms": 0.0,
+            "avg_vector_search_latency_ms": 0.0,
+            "p95_vector_search_latency_ms": 0.0,
+            "recall_at_k": 0.0,
+            "mrr": 0.0,
+            "evidence_coverage": 0.0,
+            "avg_context_tokens": 0.0,
+            "fast_path_calibration": {
+                "min_score": fast_path_min_score,
+                "min_margin": fast_path_min_margin,
+                "eligible_queries": 0,
+                "eligible_rate": 0.0,
+                "top1_relevant_rate": 0.0,
+                "note": "No query cases were supplied.",
+            },
+            "cases": [],
+        }
     return {
         "strategy": chunker.name,
         "retriever": "fastembed_query_passage_plus_chroma_hnsw",

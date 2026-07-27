@@ -117,6 +117,7 @@ class PerformanceMonitor:
         "agent_avg_ms":        (3000, Severity.WARNING,  "greater_than"),
         "tool_avg_ms":         (5000, Severity.ERROR,    "greater_than"),
     }
+    ALERT_HISTORY_LIMIT = 500
 
     def __init__(
         self,
@@ -132,10 +133,13 @@ class PerformanceMonitor:
         self._webhook      = webhook_url
         self._detector     = AnomalyDetector()
 
-        self._alerts:      List[Alert]      = []
+        self._alerts:      Deque[Alert] = deque(maxlen=self.ALERT_HISTORY_LIMIT)
+        self._active_alerts: Dict[str, Alert] = {}
         self._suggestions: List[Suggestion] = []
         self._active       = False
         self._task:        Optional[asyncio.Task] = None
+        self._webhook_client: Optional[httpx.AsyncClient] = None
+        self._webhook_tasks: set[asyncio.Task] = set()
 
         # Prometheus 指标（可选）
         self._prom: Dict[str, Any] = {}
@@ -158,6 +162,8 @@ class PerformanceMonitor:
         if self._active:
             return
         self._active = True
+        if self._webhook and self._webhook_client is None:
+            self._webhook_client = httpx.AsyncClient(timeout=5.0)
         self._task   = asyncio.create_task(self._loop())
         logger.info(f"Monitor 已启动，采集间隔 {self._interval}s")
 
@@ -169,6 +175,14 @@ class PerformanceMonitor:
                 await self._task
             except asyncio.CancelledError:
                 pass
+            self._task = None
+        for task in list(self._webhook_tasks):
+            task.cancel()
+        if self._webhook_tasks:
+            await asyncio.gather(*list(self._webhook_tasks), return_exceptions=True)
+        if self._webhook_client is not None:
+            await self._webhook_client.aclose()
+            self._webhook_client = None
 
     # ── 采集循环 ──────────────────────────────────────────────────────────────
 
@@ -256,19 +270,34 @@ class PerformanceMonitor:
         threshold, severity, operator = self.THRESHOLDS[metric]
         triggered = (operator == "less_than" and value < threshold) or \
                     (operator == "greater_than" and value > threshold)
+        alert_key = f"{metric}:{label}"
         if triggered:
+            # 同一指标在恢复前只告警一次，避免每个采集周期重复通知。
+            if alert_key in self._active_alerts:
+                return
             alert = Alert(
                 severity=severity,
-                metric=f"{metric}:{label}",
+                metric=alert_key,
                 message=f"{label} 的 {metric} = {value:.3f}，阈值 {threshold}",
                 value=value,
                 threshold=threshold,
             )
             self._alerts.append(alert)
+            self._active_alerts[alert_key] = alert
             logger.warning(f"[{severity.value.upper()}] {alert.message}")
             # 异步发送 Webhook（不阻塞采集循环）
             if self._webhook:
-                asyncio.create_task(self._send_webhook(alert))
+                task = asyncio.create_task(
+                    self._send_webhook(alert),
+                    name=f"monitor-webhook:{alert_key}",
+                )
+                self._webhook_tasks.add(task)
+                task.add_done_callback(self._webhook_tasks.discard)
+        else:
+            active = self._active_alerts.pop(alert_key, None)
+            if active is not None:
+                active.resolved = True
+                logger.info("告警已恢复: %s", alert_key)
 
     def _generate_routing_suggestions(self, agent_stats: Dict[str, Any]) -> None:
         """
@@ -297,8 +326,10 @@ class PerformanceMonitor:
 
     async def _send_webhook(self, alert: Alert) -> None:
         try:
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                await c.post(self._webhook, json=asdict(alert))  # type: ignore
+            if self._webhook_client is None:
+                return
+            response = await self._webhook_client.post(self._webhook, json=asdict(alert))  # type: ignore
+            response.raise_for_status()
         except Exception as ex:
             logger.error(f"Webhook 发送失败: {ex}")
 
@@ -309,7 +340,7 @@ class PerformanceMonitor:
         return {
             "agent_stats":   self._orchestrator.get_stats(),
             "tool_stats":    self._tool_manager.get_stats(),
-            "active_alerts": [asdict(a) for a in self._alerts if not a.resolved][-10:],
+            "active_alerts": [asdict(a) for a in self._active_alerts.values()][-10:],
             "suggestions":   [
                 {"title": s.title, "action": s.action, "priority": s.priority}
                 for s in sorted(self._suggestions, key=lambda x: -x.priority)[:5]

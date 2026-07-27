@@ -105,7 +105,19 @@ async def run_replay_case(case: Dict[str, Any]) -> ReplayResult:
 
 
 async def run_replay_suite(cases: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
-    results = [await run_replay_case(case) for case in cases]
+    results: List[ReplayResult] = []
+    for index, case in enumerate(cases):
+        try:
+            results.append(await run_replay_case(case))
+        except Exception as ex:
+            case_id = str(case.get("id", f"case-{index}")) if isinstance(case, dict) else f"case-{index}"
+            results.append(ReplayResult(
+                case_id=case_id,
+                passed=False,
+                expected={},
+                observed={"error_type": type(ex).__name__, "error": str(ex)},
+                trace={},
+            ))
     passed = sum(result.passed for result in results)
     return {
         "mode": "deterministic-route-replay",

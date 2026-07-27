@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import logging
 import threading
 import time
 import uuid
@@ -24,6 +25,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Mapping, MutableMapping
 GraphState = MutableMapping[str, Any]
 NodeHandler = Callable[[GraphState], Mapping[str, Any] | None | Awaitable[Mapping[str, Any] | None]]
 EdgeGuard = Callable[[GraphState], bool]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -290,12 +293,10 @@ class ExecutionGraph:
 
                 attempt_started = time.monotonic()
                 try:
-                    output = node.handler(state)
-                    if inspect.isawaitable(output):
-                        output = await asyncio.wait_for(
-                            output,
-                            timeout=min(node.timeout_ms, remaining_ms) / 1000,
-                        )
+                    output = await asyncio.wait_for(
+                        self._invoke_handler(node.handler, state),
+                        timeout=min(node.timeout_ms, remaining_ms) / 1000,
+                    )
                     if output:
                         state.update(output)
                     trace.node_runs.append(NodeRun(
@@ -344,7 +345,14 @@ class ExecutionGraph:
                     if edge.guard is None or edge.guard(state):
                         selected = edge
                         break
-                except Exception:
+                except Exception as exc:
+                    logger.warning(
+                        "graph edge guard failed graph=%s edge=%s->%s error=%s",
+                        self.name,
+                        edge.source,
+                        edge.target,
+                        type(exc).__name__,
+                    )
                     continue
             if selected is None:
                 trace.stop_reason = "no_matching_edge"
@@ -359,5 +367,18 @@ class ExecutionGraph:
 
         trace.total_latency_ms = (time.monotonic() - started) * 1000
         if self.trace_store:
-            self.trace_store.append(trace)
+            await asyncio.to_thread(self.trace_store.append, trace)
         return GraphResult(state=state, trace=trace)
+
+    @staticmethod
+    async def _invoke_handler(handler: NodeHandler, state: GraphState):
+        """Run synchronous handlers off-loop without exposing live graph state."""
+        if inspect.iscoroutinefunction(handler):
+            return await handler(state)
+        # A timed-out thread cannot be forcibly stopped. Supplying a new mapping
+        # prevents a late synchronous handler from mutating the graph's
+        # authoritative state after its attempt has already failed or retried.
+        output = await asyncio.to_thread(handler, dict(state))
+        if inspect.isawaitable(output):
+            return await output
+        return output

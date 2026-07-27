@@ -16,5 +16,7 @@ export const loadGraph = () => getJson<GraphDefinition>("/graph");
 
 export async function loadTraces(limit = 40): Promise<GraphTrace[]> {
   const payload = await getJson<{ items: GraphTrace[] }>(`/graph/traces/recent?limit=${limit}`);
+  // JsonlGraphTraceStore.recent() returns the selected JSONL slice in
+  // chronological order; the dashboard intentionally shows newest first.
   return payload.items.slice().reverse();
 }

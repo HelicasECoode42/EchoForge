@@ -11,10 +11,13 @@
   - 工作记忆超过阈值时自动压缩（LLM 摘要），防止 context 爆炸
   - 所有 Embedding 通过 Anthropic API 生成，无本地模型
 """
+import asyncio
 import hashlib
 import json
 import logging
+import threading
 import time
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -99,6 +102,10 @@ class MemoryManager:
         self._model  = model
 
         self._redis = redis.from_url(redis_url, decode_responses=True)
+        # Locks disappear once no compression coroutine retains them, instead
+        # of accumulating one permanent entry for every historical session.
+        self._compression_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+        self._chroma_lock = threading.RLock()
 
         # ChromaDB：优先连接独立服务（docker compose 模式），连不上则降级为本地嵌入式
         try:
@@ -138,16 +145,16 @@ class MemoryManager:
         key = self._wm_key(user_id, conv_id)
 
         # 追加到 Redis 列表（左推，最新在前）
-        self._redis.lpush(key, json.dumps({
+        await asyncio.to_thread(self._redis.lpush, key, json.dumps({
             "role":      msg.role.value,
             "content":   msg.content,
             "ts":        msg.timestamp.isoformat(),
             "metadata":  msg.metadata,
         }))
-        self._redis.expire(key, 86400)  # 24h TTL
+        await asyncio.to_thread(self._redis.expire, key, 86400)  # 24h TTL
 
         # 超过压缩阈值时触发压缩
-        if self._redis.llen(key) >= self.COMPRESS_AT:
+        if await asyncio.to_thread(self._redis.llen, key) >= self.COMPRESS_AT:
             await self._compress(user_id, conv_id)
 
     async def update_profile(self, user_id: str, conv_id: str) -> None:
@@ -184,12 +191,15 @@ class MemoryManager:
             doc_text = self._safe_text(json.dumps(profile_data, ensure_ascii=False))
 
             try:
-                self._profile.delete(ids=[doc_id])
+                await asyncio.to_thread(self._chroma_call, self._profile, "delete", ids=[doc_id])
             except Exception:
                 pass
 
             # 直接传 documents，让 ChromaDB 内置模型生成 embedding（不依赖 Voyage API）
-            self._profile.add(
+            await asyncio.to_thread(
+                self._chroma_call,
+                self._profile,
+                "add",
                 ids=[doc_id],
                 documents=[doc_text],
                 metadatas=[{"user_id": user_id, "conv_id": conv_id,
@@ -221,7 +231,9 @@ class MemoryManager:
         profile = await self._get_profile(user_id)
 
         # 4. 会话摘要（如果已压缩过）
-        summary = self._redis.get(self._summary_key(user_id, conv_id)) or ""
+        summary = await asyncio.to_thread(
+            self._redis.get, self._summary_key(user_id, conv_id)
+        ) or ""
 
         return MemoryContext(
             recent_messages=recent,
@@ -236,16 +248,28 @@ class MemoryManager:
         """
         工作记忆压缩：
           1. 用 LLM 对旧消息生成摘要
-          2. 摘要存 Redis（覆盖旧摘要）
-          3. 旧消息存入情景记忆（ChromaDB）供跨会话检索
+          2. 通过 Redis Lua 脚本原子校验尾部一致性、裁剪旧消息并更新摘要
+          3. 只有原子提交成功的协程才写入情景记忆（ChromaDB）供跨会话检索
           4. 工作记忆只保留最近 5 条
+
+        并发安全：使用 WeakValueDictionary 管理的 per-key asyncio.Lock，
+        确保同一会话同时只有一个协程执行压缩；锁在无引用时自动回收。
         """
-        messages = await self._get_working_memory(user_id, conv_id)
+        key = self._wm_key(user_id, conv_id)
+        lock = self._compression_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            await self._compress_locked(user_id, conv_id, key)
+
+    async def _compress_locked(self, user_id: str, conv_id: str, key: str) -> None:
+        """Compress one snapshot and commit it only if its old tail is unchanged."""
+        raws = await asyncio.to_thread(self._redis.lrange, key, 0, -1)
+        messages = self._decode_messages(raws)
         if len(messages) < self.COMPRESS_AT:
             return
 
         to_compress = messages[:-5]   # 保留最近 5 条
-        keep        = messages[-5:]
+        # Redis 中最新消息在前。第 6 条及之后正是待删除的旧消息。
+        compressed_raws = raws[5:]
 
         # LLM 摘要
         text = self._safe_text("\n".join(f"{m.role.value}: {m.content}" for m in to_compress))
@@ -261,31 +285,53 @@ class MemoryManager:
         except Exception:
             summary = f"对话包含 {len(to_compress)} 条消息（摘要生成失败）"
 
-        # 存摘要到 Redis
+        # 将“尾部仍与快照一致”的校验、裁剪和摘要更新放在同一个 Redis
+        # 脚本中。压缩期间新到的消息只会插入头部，因此会被完整保留；若另
+        # 一个进程已压缩同一会话，本次提交会安全失败而不是覆盖它。
         skey = self._summary_key(user_id, conv_id)
-        old_summary = self._redis.get(skey) or ""
-        new_summary = self._safe_text(f"{old_summary}\n{summary}").strip()
-        self._redis.setex(skey, 86400, new_summary)
+        commit_script = """
+        local count = #ARGV - 1
+        if count <= 0 or redis.call('LLEN', KEYS[1]) < count then return 0 end
+        for i = 1, count do
+            if redis.call('LINDEX', KEYS[1], -i) ~= ARGV[i + 1] then return 0 end
+        end
+        redis.call('LTRIM', KEYS[1], 0, -(count + 1))
+        redis.call('EXPIRE', KEYS[1], 86400)
+        local old_summary = redis.call('GET', KEYS[2])
+        local new_summary = ARGV[1]
+        if old_summary and string.len(old_summary) > 0 then
+            new_summary = old_summary .. '\\n' .. new_summary
+        end
+        redis.call('SETEX', KEYS[2], 86400, new_summary)
+        return 1
+        """
+        tail_oldest_first = list(reversed(compressed_raws))
+        committed = await asyncio.to_thread(
+            self._redis.eval,
+            commit_script,
+            2,
+            key,
+            skey,
+            summary,
+            *tail_oldest_first,
+        )
+        if not committed:
+            logger.info("跳过过期的工作记忆压缩快照: %s/%s", user_id, conv_id)
+            return
 
-        # 旧消息存入情景记忆
+        # 只有赢得原子提交的协程才写入情景记忆，避免并发重复记录。
         await self._store_episodic(user_id, conv_id, text, summary)
-
-        # 重置工作记忆为最近 5 条
-        key = self._wm_key(user_id, conv_id)
-        self._redis.delete(key)
-        for m in reversed(keep):
-            self._redis.lpush(key, json.dumps({
-                "role": m.role.value, "content": m.content,
-                "ts": m.timestamp.isoformat(), "metadata": m.metadata,
-            }))
-        self._redis.expire(key, 86400)
         logger.info(f"工作记忆压缩完成: {user_id}/{conv_id}，摘要 {len(summary)} 字")
 
     # ── 内部辅助 ──────────────────────────────────────────────────────────────
 
     async def _get_working_memory(self, user_id: str, conv_id: str) -> List[Message]:
         key  = self._wm_key(user_id, conv_id)
-        raws = self._redis.lrange(key, 0, self.WORKING_MAX - 1)
+        raws = await asyncio.to_thread(self._redis.lrange, key, 0, self.WORKING_MAX - 1)
+        return self._decode_messages(raws)
+
+    @staticmethod
+    def _decode_messages(raws: List[str]) -> List[Message]:
         msgs = []
         for raw in reversed(raws):  # Redis lpush 最新在前，reversed 还原时序
             d = json.loads(raw)
@@ -304,7 +350,10 @@ class MemoryManager:
             return []
         try:
             # 直接传 query_texts，ChromaDB 内置模型自动生成向量做匹配
-            results = self._episodic.query(
+            results = await asyncio.to_thread(
+                self._chroma_call,
+                self._episodic,
+                "query",
                 query_texts=[query_text],
                 n_results=self.HISTORY_TOP_K,
                 where={"user_id": self._safe_text(user_id)},
@@ -324,7 +373,10 @@ class MemoryManager:
             summary = self._safe_text(summary)
             doc_id = hashlib.md5(f"{user_id}{conv_id}{time.time()}".encode()).hexdigest()
             # 直接传 documents，ChromaDB 内置模型自动生成 embedding
-            self._episodic.add(
+            await asyncio.to_thread(
+                self._chroma_call,
+                self._episodic,
+                "add",
                 ids=[doc_id],
                 documents=[summary],
                 metadatas=[{"user_id": user_id, "conv_id": conv_id,
@@ -336,12 +388,22 @@ class MemoryManager:
     async def _get_profile(self, user_id: str) -> Dict[str, Any]:
         """获取用户画像（取最新一条）。"""
         try:
-            results = self._profile.get(where={"user_id": user_id}, limit=1)
+            results = await asyncio.to_thread(
+                self._chroma_call, self._profile, "get", where={"user_id": user_id}, limit=1
+            )
             if results["documents"]:
                 return json.loads(results["documents"][0])
         except Exception:
             pass
         return {}
+
+    def _chroma_call(self, collection: Any, method: str, *args: Any, **kwargs: Any) -> Any:
+        """Serialize embedded Chroma operations while retaining HTTP concurrency."""
+        lock = getattr(self, "_chroma_lock", None)
+        if lock is None:
+            return getattr(collection, method)(*args, **kwargs)
+        with lock:
+            return getattr(collection, method)(*args, **kwargs)
 
     @staticmethod
     def _wm_key(user_id: str, conv_id: str) -> str:
