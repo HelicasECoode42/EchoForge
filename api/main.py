@@ -277,6 +277,7 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    status:        str = "completed"
     conv_id:     str
     response:    str
     intent:      str
@@ -292,6 +293,13 @@ class ChatResponse(BaseModel):
     pipeline_stop_reason: str = "unknown"
     pipeline_total_latency_ms: float = 0.0
     pipeline_timings_ms: Dict[str, float] = Field(default_factory=dict)
+    verification_reason: str = "unknown"
+    execution_status: str = "unknown"
+    grounding_status: str = "not_checked"
+    task_status: str = "not_checked"
+    evidence_ids: List[str] = Field(default_factory=list)
+    citations: List[str] = Field(default_factory=list)
+    confidence: Optional[float] = None
 
 
 def _create_chat_graph(trace_store):
@@ -299,6 +307,7 @@ def _create_chat_graph(trace_store):
     from agents.agent_orchestrator import Request as OrchestratorRequest
     from core.execution_graph import EdgeSpec, ExecutionGraph, GraphBudget, NodeSpec
     from memory.conversation_memory import MsgRole
+    from core.response_verifier import verify_orchestrator_result
 
     async def load_memory(state: Dict[str, Any]):
         req: ChatRequest = state["request"]
@@ -316,10 +325,10 @@ def _create_chat_graph(trace_store):
             )
         if knowledge_task is not None:
             memory_context = memory_task.result()
-            knowledge_text, knowledge_used = knowledge_task.result()
+            knowledge_text, knowledge_used, evidence_items = knowledge_task.result()
         else:
             memory_context = memory_task.result()
-            knowledge_text, knowledge_used = "", False
+            knowledge_text, knowledge_used, evidence_items = "", False, []
         history = [
             {"role": message.role.value, "content": message.content}
             for message in memory_context.recent_messages[-5:]
@@ -329,6 +338,8 @@ def _create_chat_graph(trace_store):
             "history": history,
             "knowledge_text": knowledge_text,
             "knowledge_used": knowledge_used,
+            "evidence_items": evidence_items,
+            "evidence_ids": [item["chunk_id"] for item in evidence_items],
             "knowledge_prepared": True,
         }
 
@@ -355,6 +366,7 @@ def _create_chat_graph(trace_store):
             conv_id=state["conv_id"],
             context="\n\n".join(part for part in context_parts if part),
             history=state.get("history"),
+            evidence_ids=list(state.get("evidence_ids", [])),
         )
         return {
             "orchestrator_result": await _orchestrator.run(
@@ -374,6 +386,30 @@ def _create_chat_graph(trace_store):
         )
         return {"memory_persisted": True}
 
+    def verify_response(state: Dict[str, Any]):
+        verification = verify_orchestrator_result(
+            state["orchestrator_result"],
+            evidence_ids=list(state.get("evidence_ids", [])),
+            evidence_items={item["chunk_id"]: item for item in state.get("evidence_items", [])},
+            knowledge_required=bool(state.get("should_retrieve", False)),
+        )
+        route_trace = state["orchestrator_result"].route_trace
+        if route_trace is not None:
+            route_trace.verification_status = verification.status
+        return {
+            "verification": verification,
+            "verification_status": verification.status,
+            "pipeline_status": "completed" if verification.status == "completed" else verification.status,
+        }
+
+    def blocked(state: Dict[str, Any]):
+        verification = state.get("verification")
+        return {"pipeline_status": "blocked", "verification_reason": verification.reason if verification else "blocked"}
+
+    def failed(state: Dict[str, Any]):
+        verification = state.get("verification")
+        return {"pipeline_status": "failed", "verification_reason": verification.reason if verification else "failed"}
+
     return ExecutionGraph(
         name="echoforge_chat_pipeline",
         nodes=[
@@ -381,8 +417,11 @@ def _create_chat_graph(trace_store):
             NodeSpec("decide_retrieval", decide_retrieval, timeout_ms=250),
             NodeSpec("retrieve", retrieve, timeout_ms=8_000, max_retries=1),
             NodeSpec("execute_agent", execute_agent, timeout_ms=20_000),
+            NodeSpec("verify_response", verify_response, timeout_ms=250),
             NodeSpec("persist_memory", persist_memory, timeout_ms=5_000),
             NodeSpec("complete", lambda state: None, timeout_ms=250),
+            NodeSpec("blocked", blocked, timeout_ms=250),
+            NodeSpec("failed", failed, timeout_ms=250),
         ],
         edges=[
             EdgeSpec("load_memory", "decide_retrieval", label="memory_loaded"),
@@ -399,11 +438,29 @@ def _create_chat_graph(trace_store):
                 label="retrieval_skipped",
             ),
             EdgeSpec("retrieve", "execute_agent", label="context_ready"),
-            EdgeSpec("execute_agent", "persist_memory", label="agent_completed"),
+            EdgeSpec("execute_agent", "verify_response", label="agent_observed"),
+            EdgeSpec(
+                "verify_response",
+                "persist_memory",
+                guard=lambda state: state["verification_status"] == "completed",
+                label="response_verified",
+            ),
+            EdgeSpec(
+                "verify_response",
+                "blocked",
+                guard=lambda state: state["pipeline_status"] == "blocked",
+                label="verification_blocked",
+            ),
+            EdgeSpec(
+                "verify_response",
+                "failed",
+                guard=lambda state: state["pipeline_status"] == "failed",
+                label="verification_failed",
+            ),
             EdgeSpec("persist_memory", "complete", label="memory_persisted"),
         ],
         start_node="load_memory",
-        terminal_nodes={"complete"},
+        terminal_nodes={"complete", "blocked", "failed"},
         budget=GraphBudget(
             max_node_executions=int(os.getenv("GRAPH_MAX_NODE_EXECUTIONS", "8")),
             max_transitions=int(os.getenv("GRAPH_MAX_TRANSITIONS", "7")),
@@ -445,9 +502,13 @@ async def chat(req: ChatRequest):
 
     result = graph_result.state["orchestrator_result"]
     trace = result.route_trace
+    verification = graph_result.state.get("verification")
+    pipeline_status = graph_result.state.get("pipeline_status", "unknown")
+    response_text = result.response if pipeline_status == "completed" else "当前资料不足以验证这条回答，已阻止写入记忆并建议转人工。"
     return ChatResponse(
+        status=pipeline_status,
         conv_id=conv_id,
-        response=result.response,
+        response=response_text,
         intent=result.intent.value if result.intent else "other",
         agent_type=result.agent_type.value,
         escalated=result.escalated,
@@ -461,6 +522,13 @@ async def chat(req: ChatRequest):
         pipeline_stop_reason=graph_result.trace.stop_reason,
         pipeline_total_latency_ms=round(graph_result.trace.total_latency_ms, 1),
         pipeline_timings_ms=graph_result.trace.node_timings_ms,
+        verification_reason=verification.reason if verification else "unknown",
+        execution_status=verification.execution_status if verification else "unknown",
+        grounding_status=verification.grounding_status if verification else "not_checked",
+        task_status=verification.task_status if verification else "not_checked",
+        evidence_ids=list(graph_result.state.get("evidence_ids", [])),
+        citations=list(result.citations),
+        confidence=result.confidence,
     )
 
 
@@ -472,12 +540,15 @@ async def chat_stream(req: ChatRequest):
 
     conv_id = req.conv_id or str(uuid.uuid4())
     events: asyncio.Queue = asyncio.Queue()
+    stream_tokens: list[str] = []
 
     async def emit(event: str, data: Dict[str, Any]):
         await events.put((event, data))
 
     async def sink(text: str):
-        await emit("token", {"text": text})
+        # Buffer until the independent verifier approves the final answer.
+        # Otherwise an ungrounded answer could be visible before the graph blocks it.
+        stream_tokens.append(text)
 
     async def run_graph():
         await emit("started", {"conv_id": conv_id})
@@ -495,13 +566,25 @@ async def chat_stream(req: ChatRequest):
                 })
                 return
             agent_result = result.state["orchestrator_result"]
+            pipeline_status = result.state.get("pipeline_status", "unknown")
+            verification = result.state.get("verification")
+            if pipeline_status == "completed":
+                for token in stream_tokens:
+                    await emit("token", {"text": token})
             await emit("complete", {
                 "conv_id": conv_id,
+                "status": pipeline_status,
                 "trace_id": agent_result.route_trace.trace_id if agent_result.route_trace else None,
                 "graph_trace_id": result.trace.trace_id,
                 "agent_type": agent_result.agent_type.value,
                 "intent": agent_result.intent.value if agent_result.intent else "other",
                 "latency_ms": round(agent_result.latency_ms, 1),
+                "verification_reason": verification.reason if verification else "unknown",
+                "execution_status": verification.execution_status if verification else "unknown",
+                "grounding_status": verification.grounding_status if verification else "not_checked",
+                "task_status": verification.task_status if verification else "not_checked",
+                "evidence_ids": list(result.state.get("evidence_ids", [])),
+                "citations": list(agent_result.citations),
             })
         except Exception as ex:
             logger.exception("chat stream failed")
@@ -549,23 +632,24 @@ async def recent_graph_traces(limit: int = 20):
     return {"items": await asyncio.to_thread(_graph_trace_store.recent, limit)}
 
 
-async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, bool]:
+async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, bool, list[dict[str, Any]]]:
     """
     为 /chat 主链路构建 RAG 知识上下文。
 
     这里复用 MCPToolManager 的查询改写、并行召回、重排、fallback 能力。
     """
     if _tool_manager is None:
-        return "", False
+        return "", False, []
     if not _should_use_knowledge(message):
-        return "", False
+        return "", False, []
     try:
         result = await _tool_manager.search_with_rewrite("knowledge_search", message, top_k=top_k)
         if not result.success or not isinstance(result.data, list) or not result.data:
-            return "", False
+            return "", False, []
 
         parts = ["[知识库检索结果]"]
         used = False
+        evidence_items: list[dict[str, Any]] = []
         for i, item in enumerate(result.data[:top_k], start=1):
             if not isinstance(item, dict):
                 continue
@@ -574,16 +658,23 @@ async def _build_knowledge_context(message: str, top_k: int = 3) -> tuple[str, b
             score = item.get("score", "")
             if not content:
                 continue
+            source_ids = item.get("source_chunk_ids") or ([item.get("chunk_id")] if item.get("chunk_id") else [])
+            source_ids = [str(source_id) for source_id in source_ids if source_id]
+            if not source_ids:
+                continue
             used = True
-            parts.append(f"{i}. 标题: {title}\n   相关度: {score}\n   内容: {content[:600]}")
+            primary_id = source_ids[0]
+            parts.append(f"{i}. 证据ID: {primary_id}\n   标题: {title}\n   相关度: {score}\n   内容: {content[:600]}")
+            for source_id in source_ids:
+                evidence_items.append({"chunk_id": source_id, "title": title, "content": content[:600], "score": score})
 
         if not used:
-            return "", False
+            return "", False, []
         parts.append("请优先依据以上知识库内容回答；如果知识库内容不足，再结合通用客服能力说明。")
-        return "\n".join(parts), True
+        return "\n".join(parts), True, evidence_items
     except Exception as ex:
         logger.warning(f"构建知识库上下文失败: {ex}")
-        return "", False
+        return "", False, []
 
 
 def _should_use_knowledge(message: str) -> bool:

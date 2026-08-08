@@ -16,6 +16,7 @@
   - Agent 置信度低于阈值 → 自动升级到更高级 Agent 或转人工
 """
 import asyncio
+import json
 import logging
 import time
 import uuid
@@ -69,9 +70,12 @@ class AgentResponse:
     agent_type:  AgentType
     content:     str
     success:     bool
-    confidence:  float = 1.0
+    confidence:  Optional[float] = None
     latency_ms:  float = 0.0
     escalate:    bool  = False   # 是否需要升级
+    citations:   List[str] = field(default_factory=list)
+    needs_human: bool = False
+    unresolved:  List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -84,6 +88,7 @@ class Request:
     intent:      Optional[IntentCategory] = None
     urgency:     Optional[UrgencyLevel]   = None
     routing_budget: Optional[RoutingBudget] = None
+    evidence_ids: List[str] = field(default_factory=list)
     request_id:  str = field(default_factory=lambda: str(uuid.uuid4())[:8])
 
 
@@ -94,8 +99,13 @@ class OrchestratorResult:
     agent_type:  AgentType
     intent:      Optional[IntentCategory]
     escalated:   bool  = False
+    success:      bool  = False
     latency_ms:  float = 0.0
     route_trace: Optional[RouteTrace] = None
+    citations: List[str] = field(default_factory=list)
+    confidence: Optional[float] = None
+    needs_human: bool = False
+    unresolved: List[str] = field(default_factory=list)
 
 
 # ── 基础 Agent ────────────────────────────────────────────────────────────────
@@ -115,7 +125,9 @@ class BaseAgent:
         t0 = time.monotonic()
         self.stats.total += 1
         try:
-            content = await self._call_llm(req)
+            raw_content = await self._call_llm(req)
+            payload = self._parse_answer_payload(raw_content)
+            content = str(payload.get("answer", raw_content)) if payload else raw_content
             ms = (time.monotonic() - t0) * 1000
             self.stats.success += 1
             self.stats.total_ms += ms
@@ -126,6 +138,10 @@ class BaseAgent:
                 success=True,
                 latency_ms=ms,
                 escalate=escalate,
+                citations=list(payload.get("citations", [])) if payload else [],
+                confidence=payload.get("confidence") if payload else None,
+                needs_human=bool(payload.get("needs_human", False)) if payload else False,
+                unresolved=list(payload.get("unresolved", [])) if payload else [],
             )
         except Exception as ex:
             ms = (time.monotonic() - t0) * 1000
@@ -143,7 +159,9 @@ class BaseAgent:
         t0 = time.monotonic()
         self.stats.total += 1
         try:
-            content = await self._call_llm_stream(req, progress_sink)
+            raw_content = await self._call_llm_stream(req, progress_sink)
+            payload = self._parse_answer_payload(raw_content)
+            content = str(payload.get("answer", raw_content)) if payload else raw_content
             ms = (time.monotonic() - t0) * 1000
             self.stats.success += 1
             self.stats.total_ms += ms
@@ -153,6 +171,10 @@ class BaseAgent:
                 success=True,
                 latency_ms=ms,
                 escalate=self._needs_escalation(content),
+                citations=list(payload.get("citations", [])) if payload else [],
+                confidence=payload.get("confidence") if payload else None,
+                needs_human=bool(payload.get("needs_human", False)) if payload else False,
+                unresolved=list(payload.get("unresolved", [])) if payload else [],
             )
         except Exception as ex:
             ms = (time.monotonic() - t0) * 1000
@@ -179,10 +201,30 @@ class BaseAgent:
             component=f"agent.{self.agent_type.value}",
             model=self._model,
             max_tokens=1024,
-            system=self.system_prompt,
+            system=self._system_prompt(req),
             messages=messages,
         )
         return extract_text(resp)
+
+    @staticmethod
+    def _parse_answer_payload(content: str) -> Optional[Dict[str, Any]]:
+        """Accept structured answers while preserving compatibility with plain text."""
+        try:
+            value = json.loads(content)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(value, dict) or not isinstance(value.get("answer"), str):
+            return None
+        citations = value.get("citations", [])
+        unresolved = value.get("unresolved", [])
+        if not isinstance(citations, list) or not all(isinstance(item, str) for item in citations):
+            return None
+        if not isinstance(unresolved, list) or not all(isinstance(item, str) for item in unresolved):
+            return None
+        confidence = value.get("confidence")
+        if confidence is not None and not isinstance(confidence, (int, float)):
+            return None
+        return value
 
     async def _call_llm_stream(self, req: Request, progress_sink) -> str:
         def _clean(s: str) -> str:
@@ -202,7 +244,7 @@ class BaseAgent:
         async with self._client.messages.stream(
             model=self._model,
             max_tokens=1024,
-            system=self.system_prompt,
+            system=self._system_prompt(req),
             messages=messages,
             **stream_kwargs,
         ) as stream:
@@ -216,6 +258,16 @@ class BaseAgent:
         # a valid final response; normalize that response as a fallback.
         content = "".join(chunks).strip()
         return content or extract_text(final_message)
+
+    def _system_prompt(self, req: Request) -> str:
+        if not req.evidence_ids:
+            return self.system_prompt
+        return self.system_prompt + (
+            " 这是一次需要知识库依据的回答。只能使用提供的证据 ID，不要编造来源。"
+            "请严格返回 JSON：{\"answer\": string, \"citations\": string[], "
+            "\"confidence\": number, \"needs_human\": boolean, \"unresolved\": string[]}。"
+            f"可用证据 ID：{json.dumps(req.evidence_ids, ensure_ascii=False)}"
+        )
 
     def _needs_escalation(self, content: str) -> bool:
         """检测 Agent 是否建议升级（简单关键词检测）。"""
@@ -329,6 +381,7 @@ class AgentOrchestrator:
             intent=req.intent.value if req.intent else "other",
             urgency=req.urgency.name.lower() if req.urgency else "low",
             budget=budget,
+            evidence_ids=req.evidence_ids,
         )
         response, trace = await self._execute_bounded(req, agent_type, budget, trace, progress_sink=progress_sink)
 
@@ -341,6 +394,7 @@ class AgentOrchestrator:
 
         trace.final_agent = response.agent_type.value
         trace.success = response.success
+        trace.citations = list(response.citations)
         trace.total_latency_ms = (time.monotonic() - t0) * 1000
         if self._trace_store:
             self._trace_store.append(trace)
@@ -351,8 +405,13 @@ class AgentOrchestrator:
             agent_type=response.agent_type,
             intent=req.intent,
             escalated=escalated,
+            success=response.success,
             latency_ms=trace.total_latency_ms,
             route_trace=trace,
+            citations=list(response.citations),
+            confidence=response.confidence,
+            needs_human=response.needs_human or escalated,
+            unresolved=list(response.unresolved),
         )
 
     async def run_parallel(self, req: Request, agent_types: List[AgentType]) -> OrchestratorResult:
@@ -379,7 +438,9 @@ class AgentOrchestrator:
             agent_type=agent_types[0],
             intent=req.intent,
             escalated=escalated,
+            success=bool(parts),
             latency_ms=(time.monotonic() - t0) * 1000,
+            citations=[citation for response in responses if isinstance(response, AgentResponse) for citation in response.citations],
         )
 
     # ── 路由逻辑 ──────────────────────────────────────────────────────────────
