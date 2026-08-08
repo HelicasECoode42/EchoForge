@@ -2,7 +2,10 @@
 # 目标：生产镜像尽量精简，开发镜像包含调试工具
 
 # ── 阶段 1：基础环境 ──────────────────────────────────────────────────────────
-FROM python:3.12-slim AS base
+# Pin the Debian family instead of following the moving `slim` tag. This keeps
+# builds reproducible and avoids transient failures from a newly promoted
+# testing suite on the architecture-specific mirror.
+FROM python:3.12-slim-bookworm AS base
 
 WORKDIR /app
 
@@ -13,9 +16,11 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
 # curl 用于健康检查；Embedding 使用 FastEmbed ONNX，无需 gcc/g++。
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    printf 'Acquire::Retries "5";\n' > /etc/apt/apt.conf.d/80-retries; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends curl; \
+    rm -rf /var/lib/apt/lists/*
 
 # ── 阶段 2：安装 Python 依赖 ──────────────────────────────────────────────────
 FROM base AS dependencies

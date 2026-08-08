@@ -63,15 +63,25 @@ create_directories() {
 # 校验指定环境文件中的关键生产凭证，不执行或 source 文件内容。
 validate_env_file() {
     local env_path=$1
-    local anthropic_key redis_password
+    local anthropic_key redis_password secret_key jwt_secret_key
     anthropic_key=$(awk -F= '/^ANTHROPIC_API_KEY=/{sub(/^[^=]*=/, ""); print; exit}' "$env_path")
     redis_password=$(awk -F= '/^REDIS_PASSWORD=/{sub(/^[^=]*=/, ""); print; exit}' "$env_path")
+    secret_key=$(awk -F= '/^SECRET_KEY=/{sub(/^[^=]*=/, ""); print; exit}' "$env_path")
+    jwt_secret_key=$(awk -F= '/^JWT_SECRET_KEY=/{sub(/^[^=]*=/, ""); print; exit}' "$env_path")
     if [ -z "$anthropic_key" ] || [[ "$anthropic_key" == your-* ]]; then
         print_error "ANTHROPIC_API_KEY 未配置"
         return 1
     fi
     if [ -z "$redis_password" ] || [[ "$redis_password" == replace-* ]] || [ ${#redis_password} -lt 16 ]; then
         print_error "REDIS_PASSWORD 必须设置为至少 16 位的随机密码"
+        return 1
+    fi
+    if [ -z "$secret_key" ] || [[ "$secret_key" == change_this* ]] || [ ${#secret_key} -lt 32 ]; then
+        print_error "SECRET_KEY 必须设置为至少 32 位的随机密钥"
+        return 1
+    fi
+    if [ -z "$jwt_secret_key" ] || [[ "$jwt_secret_key" == change_this* ]] || [ ${#jwt_secret_key} -lt 32 ]; then
+        print_error "JWT_SECRET_KEY 必须设置为至少 32 位的随机密钥"
         return 1
     fi
 }
