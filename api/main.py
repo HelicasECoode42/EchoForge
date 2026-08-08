@@ -396,6 +396,8 @@ def _create_chat_graph(trace_store):
         route_trace = state["orchestrator_result"].route_trace
         if route_trace is not None:
             route_trace.verification_status = verification.status
+            if trace_store is not None:
+                trace_store.append(route_trace)
         return {
             "verification": verification,
             "verification_status": verification.status,
@@ -540,15 +542,14 @@ async def chat_stream(req: ChatRequest):
 
     conv_id = req.conv_id or str(uuid.uuid4())
     events: asyncio.Queue = asyncio.Queue()
-    stream_tokens: list[str] = []
 
     async def emit(event: str, data: Dict[str, Any]):
         await events.put((event, data))
 
     async def sink(text: str):
-        # Buffer until the independent verifier approves the final answer.
-        # Otherwise an ungrounded answer could be visible before the graph blocks it.
-        stream_tokens.append(text)
+        # The model may emit an unverified structured envelope. Do not expose
+        # any model fragments before the independent verifier approves it.
+        return None
 
     async def run_graph():
         await emit("started", {"conv_id": conv_id})
@@ -569,8 +570,10 @@ async def chat_stream(req: ChatRequest):
             pipeline_status = result.state.get("pipeline_status", "unknown")
             verification = result.state.get("verification")
             if pipeline_status == "completed":
-                for token in stream_tokens:
-                    await emit("token", {"text": token})
+                # The model may have streamed a structured JSON envelope for
+                # retrieval-backed answers. Only expose the normalized answer
+                # after verification, never the raw envelope fragments.
+                await emit("token", {"text": agent_result.response})
             await emit("complete", {
                 "conv_id": conv_id,
                 "status": pipeline_status,

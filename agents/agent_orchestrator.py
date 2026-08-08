@@ -396,8 +396,6 @@ class AgentOrchestrator:
         trace.success = response.success
         trace.citations = list(response.citations)
         trace.total_latency_ms = (time.monotonic() - t0) * 1000
-        if self._trace_store:
-            self._trace_store.append(trace)
 
         return OrchestratorResult(
             request_id=req.request_id,
