@@ -48,3 +48,19 @@ export type GraphTrace = {
   total_latency_ms: number;
   node_timings_ms: Record<string, number>;
 };
+
+export type RouteTrace = {
+  trace_id: string;
+  request_id: string;
+  created_at: string;
+  intent: string;
+  urgency: string;
+  attempts: number;
+  reroutes: number;
+  stop_reason: string;
+  final_agent: string | null;
+  success: boolean;
+  evidence_ids: string[];
+  citations: string[];
+  verification_status: string;
+};
