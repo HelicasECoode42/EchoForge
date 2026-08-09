@@ -59,6 +59,9 @@ class RouteTrace:
     final_agent: Optional[str] = None
     success: bool = False
     total_latency_ms: float = 0.0
+    evidence_ids: List[str] = field(default_factory=list)
+    citations: List[str] = field(default_factory=list)
+    verification_status: str = "not_checked"
 
     @classmethod
     def start(
@@ -69,6 +72,7 @@ class RouteTrace:
         intent: str,
         urgency: str,
         budget: RoutingBudget,
+        evidence_ids: Optional[List[str]] = None,
     ) -> "RouteTrace":
         encoded = message.encode("utf-8", errors="ignore")
         return cls(
@@ -80,6 +84,7 @@ class RouteTrace:
             intent=intent,
             urgency=urgency,
             budget=budget,
+            evidence_ids=list(evidence_ids or []),
         )
 
     def to_dict(self) -> Dict[str, Any]:
