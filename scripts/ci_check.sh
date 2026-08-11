@@ -34,6 +34,9 @@ fi
 if git ls-files --error-unmatch core/test_response_verifier.py >/dev/null 2>&1; then
   TEST_PATHS+=(core/test_response_verifier.py)
 fi
+while IFS= read -r test_file; do
+  [[ -n "$test_file" ]] && TEST_PATHS+=("$test_file")
+done < <(git ls-files 'core/test_*.py' | grep -v '^core/test_response_verifier.py$')
 
 if (( ${#TEST_PATHS[@]} > 0 )); then
   "$PYTEST_BIN" -q "${TEST_PATHS[@]}"
