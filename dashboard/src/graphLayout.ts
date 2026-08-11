@@ -7,8 +7,11 @@ const preferred: Record<string, Point> = {
   decide_retrieval: { x: 300, y: 190 },
   retrieve: { x: 490, y: 95 },
   execute_agent: { x: 620, y: 190 },
-  persist_memory: { x: 790, y: 190 },
-  complete: { x: 930, y: 190 },
+  verify_response: { x: 760, y: 190 },
+  persist_memory: { x: 900, y: 190 },
+  complete: { x: 1030, y: 95 },
+  blocked: { x: 1030, y: 190 },
+  failed: { x: 1030, y: 285 },
 };
 
 export function layoutGraph(graph: GraphDefinition): Record<string, Point> {

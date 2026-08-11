@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { loadGraph, loadTraces } from "./api";
+import { loadGraph, loadRouteTraces, loadTraces } from "./api";
 import { DEMO_GRAPH, DEMO_TRACES } from "./demo";
 import { layoutGraph } from "./graphLayout";
-import type { GraphDefinition, GraphTrace } from "./types";
+import type { GraphDefinition, GraphTrace, RouteTrace } from "./types";
 
 const short = (value: string) => value.length > 22 ? `${value.slice(0, 12)}…${value.slice(-7)}` : value;
 const milliseconds = (value: number) => `${value < 10 ? value.toFixed(2) : value.toFixed(1)} ms`;
@@ -10,6 +10,7 @@ const milliseconds = (value: number) => `${value < 10 ? value.toFixed(2) : value
 export function App() {
   const [graph, setGraph] = useState<GraphDefinition | null>(null);
   const [traces, setTraces] = useState<GraphTrace[]>([]);
+  const [routeTraces, setRouteTraces] = useState<RouteTrace[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [step, setStep] = useState(0);
   const [error, setError] = useState("");
@@ -20,10 +21,20 @@ export function App() {
     setLoading(true);
     try {
       const [definition, recent] = await Promise.all([loadGraph(), loadTraces()]);
+      let routes: RouteTrace[] = [];
+      let routeError = "";
+      try {
+        routes = await loadRouteTraces();
+      } catch (cause) {
+        // Older API instances may not expose route evidence yet. The graph
+        // view is still useful, so keep it live and surface the exact gap.
+        routeError = cause instanceof Error ? cause.message : "route trace unavailable";
+      }
       setGraph(definition);
       setTraces(recent);
+      setRouteTraces(routes);
       setSelectedId((current) => current || recent[0]?.trace_id || "");
-      setError("");
+      setError(routeError);
       setUsingDemo(false);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Unknown API error";
@@ -42,6 +53,7 @@ export function App() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   const trace = traces.find((item) => item.trace_id === selectedId) ?? traces[0];
+  const legacyTrace = Boolean(trace && !trace.node_runs.some((run) => run.node === "verify_response"));
   useEffect(() => { setStep(trace?.node_runs.length ?? 0); }, [trace?.trace_id, trace?.node_runs.length]);
 
   const visibleRuns = trace?.node_runs.slice(0, step) ?? [];
@@ -61,19 +73,21 @@ export function App() {
         </div>
         <div className="actions">
           <div className={`status ${usingDemo ? "warn" : error ? "bad" : "good"}`}>
-            <i /> {usingDemo ? "DEMO TRACE" : error ? "API OFFLINE" : loading ? "SYNCING" : "TRACE LINKED"}
+            <i /> {usingDemo ? "DEMO TRACE" : error ? "API DEGRADED" : loading ? "SYNCING" : "TRACE LINKED"}
           </div>
           <button type="button" onClick={() => void refresh()} disabled={loading}>刷新证据</button>
         </div>
       </header>
 
-      {error && <section className="error">无法读取 EchoForge API：{error}{usingDemo && "；开发模式正在展示明确标记的演示路径。"}</section>}
+      {error && <section className="error">EchoForge API 证据接口提示：{error}{usingDemo && "；开发模式正在展示明确标记的演示路径。"}</section>}
+      {legacyTrace && <section className="history-note">当前选中的是 verifier 改造前的历史 trace；它可以用于回放旧行为，不代表当前生产图的完整路径。</section>}
 
       <section className="metrics">
         <Metric label="STOP REASON" value={trace?.stop_reason ?? "—"} tone={trace?.stop_reason === "completed" ? "cyan" : "amber"} />
         <Metric label="PIPELINE" value={trace ? milliseconds(trace.total_latency_ms) : "—"} />
         <Metric label="NODE RUNS" value={trace ? String(trace.node_runs.length) : "—"} />
         <Metric label="GRAPH BUDGET" value={graph ? `${graph.budget.max_node_executions}N / ${graph.budget.max_transitions}E` : "—"} />
+        <Metric label="EVIDENCE LINKS" value={routeTraces[0] ? `${routeTraces[0].citations.length}/${routeTraces[0].evidence_ids.length}` : "—"} tone="cyan" />
       </section>
 
       <section className="workspace">
@@ -84,7 +98,7 @@ export function App() {
           </div>
           <div className="canvas-wrap">
             {graph && (
-              <svg viewBox="0 0 1040 350" role="img" aria-label="EchoForge execution graph">
+              <svg viewBox="0 0 1180 350" role="img" aria-label="EchoForge execution graph">
                 <defs>
                   <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
                     <path d="M0,0 L0,6 L8,3 z" className="arrow" />
@@ -151,6 +165,16 @@ export function App() {
             </div>;
           })}
         </div>
+      </section>
+
+      <section className="panel evidence-panel">
+        <div className="panel-title"><div><small>ANSWER QUALITY GATE</small><h2>Evidence lineage</h2></div><code>route trace / verifier</code></div>
+        {routeTraces[0] ? <div className="evidence-grid">
+          <div><span>VERIFICATION</span><strong className={routeTraces[0].verification_status === "completed" ? "cyan" : "amber"}>{routeTraces[0].verification_status}</strong></div>
+          <div><span>ROUTE</span><strong>{routeTraces[0].final_agent ?? "—"}</strong></div>
+          <div><span>RETRIEVED IDS</span><strong>{routeTraces[0].evidence_ids.length ? routeTraces[0].evidence_ids.join(", ") : "none"}</strong></div>
+          <div><span>CITATIONS</span><strong>{routeTraces[0].citations.length ? routeTraces[0].citations.join(", ") : "none"}</strong></div>
+        </div> : <p className="empty">发送一次请求后，这里会显示 evidence IDs、citations 和 verifier 终态。</p>}
       </section>
     </main>
   );
