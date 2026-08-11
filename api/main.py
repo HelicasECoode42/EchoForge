@@ -1,5 +1,5 @@
 """
-EchoMind 智能客服系统 — FastAPI 入口
+EchoForge Agent Reliability Harness — FastAPI 入口
 
 启动时打印小熊饼干图案。
 所有核心组件在 lifespan 中初始化，通过环境变量配置。
@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 BANNER = r"""
     ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ
    ╔══════════════════════╗
-   ║   EchoMind  v2.0     ║
-   ║   智能客服 AI 系统    ║
+   ║   EchoForge v3.1     ║
+   ║   Agent Reliability  ║
    ╚══════════════════════╝
     ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ  ʕ•ᴥ•ʔ
 """
@@ -54,6 +54,7 @@ _evaluator    = None
 _trace_store  = None
 _graph_trace_store = None
 _chat_graph   = None
+_skill_manager = None
 _background_tasks: set[asyncio.Task[Any]] = set()
 _PLACEHOLDER_SECRET_PREFIXES = ("your-", "replace-", "change-me", "placeholder")
 
@@ -101,13 +102,14 @@ def _anthropic_cfg() -> Dict[str, Any]:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _orchestrator, _memory, _tool_manager, _monitor, _evaluator, _trace_store
-    global _graph_trace_store, _chat_graph
+    global _graph_trace_store, _chat_graph, _skill_manager
 
     print(BANNER, flush=True)
 
     from agents.agent_orchestrator import AgentOrchestrator, Request
     from core.execution_graph import JsonlGraphTraceStore
     from core.intent_recognizer import IntentRecognizer
+    from core.skill_loader import SkillManager
     from evidence.route_trace import JsonlRouteTraceStore, RoutingBudget
     from evaluation.evaluator import EndToEndEvaluator
     from mcp.knowledge_base import KnowledgeBase
@@ -130,6 +132,12 @@ async def lifespan(app: FastAPI):
         embedding_provider=embedding_provider,
     )
 
+    _skill_manager = SkillManager(
+        root_dir=os.getenv("ECHOFORGE_SKILLS_DIR", str(pathlib.Path(_ROOT) / "skills")),
+        max_prompt_chars=int(os.getenv("SKILLS_MAX_PROMPT_CHARS", "5000")),
+    )
+    _skill_manager.load()
+
     # Agent 编排器
     _trace_store = JsonlRouteTraceStore(
         os.getenv("ROUTE_TRACE_PATH", "/app/data/evidence/route_traces.jsonl")
@@ -146,6 +154,7 @@ async def lifespan(app: FastAPI):
         intent_recognizer=recognizer,
         trace_store=_trace_store,
         default_budget=route_budget,
+        skill_manager=_skill_manager,
     )
 
     # 记忆管理器（Redis 工作记忆 + ChromaDB 情景记忆/用户画像）
@@ -419,6 +428,24 @@ async def health():
     if _orchestrator is None:
         raise HTTPException(503, "服务未就绪")
     return {"status": "ok", "agents": _orchestrator.get_stats()}
+
+
+@app.get("/skills", tags=["Skills"])
+async def skills_summary():
+    """List loaded skill metadata without exposing full prompt content."""
+    if _skill_manager is None:
+        raise HTTPException(503, "Skills manager is not initialized")
+    return _skill_manager.summary()
+
+
+@app.post("/skills/reload", tags=["Skills"])
+async def reload_skills():
+    """Atomically rescan local skill files and update all built-in agents."""
+    if _skill_manager is None or _orchestrator is None:
+        raise HTTPException(503, "Skills manager is not initialized")
+    await asyncio.to_thread(_skill_manager.reload)
+    _orchestrator.set_skill_manager(_skill_manager)
+    return _skill_manager.summary()
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -808,13 +835,24 @@ async def run_eval(body: Optional[EvalRunInput] = None):
 # ── 交互式 CLI ────────────────────────────────────────────────────────────────
 async def _cli():
     print(BANNER)
-    print("EchoMind CLI — 输入 quit 退出\n")
+    print("EchoForge CLI — 输入 quit 退出\n")
 
     from agents.agent_orchestrator import AgentOrchestrator, Request
+    from core.skill_loader import SkillManager
     from memory.conversation_memory import MemoryManager, MsgRole
 
     cfg = _anthropic_cfg()
-    orch = AgentOrchestrator(api_key=cfg["api_key"], base_url=cfg.get("base_url"), model=cfg["model"])
+    skill_manager = SkillManager(
+        root_dir=os.getenv("ECHOFORGE_SKILLS_DIR", str(pathlib.Path(_ROOT) / "skills")),
+        max_prompt_chars=int(os.getenv("SKILLS_MAX_PROMPT_CHARS", "5000")),
+    )
+    skill_manager.load()
+    orch = AgentOrchestrator(
+        api_key=cfg["api_key"],
+        base_url=cfg.get("base_url"),
+        model=cfg["model"],
+        skill_manager=skill_manager,
+    )
     mem  = MemoryManager(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
         chroma_host=os.getenv("CHROMA_HOST", "localhost"),
@@ -848,7 +886,7 @@ async def _cli():
         await mem.add_message(user_id, conv_id, MsgRole.USER, msg)
         await mem.add_message(user_id, conv_id, MsgRole.ASSISTANT, result.response)
 
-        print(f"\nEchoMind [{result.agent_type.value}]: {result.response}\n")
+        print(f"\nEchoForge [{result.agent_type.value}]: {result.response}\n")
 
 
 if __name__ == "__main__":

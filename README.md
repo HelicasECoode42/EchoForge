@@ -1,8 +1,14 @@
 # EchoForge
 
-EchoForge 是一个面向智能客服场景的多 Agent 应用工程项目，重点不在堆叠 Agent 数量，而在于让路由、检索、降级与评测具备可解释、可回放和可验证的工程边界。
+EchoForge 是一个可验证、可回放的 Multi-Agent RAG Runtime。当前以企业知识协同为示例场景，重点不在堆叠 Agent 数量，而在于让路由、检索、降级与评测具备可解释、可回放和可验证的工程边界。
 
-项目提供 FastAPI 服务，将意图识别、知识检索、专业 Agent 路由、短期/长期记忆和执行证据串成完整请求链路；同时提供无需外部模型的确定性回放，以及基于真实本地 Embedding + ChromaDB 的检索评测。
+项目提供 FastAPI 服务，将意图识别、知识检索、专业 Agent 路由、动态 Skills、短期/长期记忆和执行证据串成完整请求链路；同时提供无需外部模型的确定性回放，以及基于真实本地 Embedding + ChromaDB 的检索评测。
+
+## 项目性质
+
+EchoForge 是个人学习、研究与求职展示项目，主要用于验证 Multi-Agent 执行、RAG 检索评测、运行证据与可靠性治理方案。
+
+本仓库公开用于阅读学习、技术交流和作品展示，但目前未提供开源许可证。你可以参考其中的设计思想和工程实践；未经作者明确许可，不得复制、修改后再分发、直接集成到其他项目或用于商业用途。
 
 ## 核心能力
 
@@ -12,6 +18,7 @@ EchoForge 是一个面向智能客服场景的多 Agent 应用工程项目，重
 - **显式 Embedding 管理**：固定 Provider、模型、维度、距离度量和 Schema 版本，使用 fingerprint 隔离不兼容索引。
 - **可评测 Chunking**：支持 fixed-char、sliding-window 和 structure-token 三种策略，并比较 Recall@K、MRR、证据覆盖率和上下文 Token。
 - **自适应检索策略**：高置信查询跳过 Rewrite / Rerank；不确定查询保留多查询召回和重排链路。
+- **动态 Skills**：按 Agent 与关键词注入业务 SOP，通过 `/skills` 查看状态并用 `/skills/reload` 热加载。
 - **工程可靠性**：工具调用支持缓存、熔断、降级和调用预算，Prometheus 暴露运行指标。
 
 ## 请求链路
@@ -93,6 +100,8 @@ EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 ROUTE_MAX_ATTEMPTS=2
 ROUTE_MAX_REROUTES=1
 ROUTE_MAX_LATENCY_MS=15000
+ECHOFORGE_SKILLS_DIR=./skills
+SKILLS_MAX_PROMPT_CHARS=5000
 ```
 
 ### 3. 启动服务
@@ -105,6 +114,13 @@ uvicorn api.main:app --reload
 
 ```bash
 docker compose up --build
+```
+
+查看或热加载 Skills：
+
+```bash
+curl http://localhost:8000/skills
+curl -X POST http://localhost:8000/skills/reload
 ```
 
 ## 评测与回放
@@ -152,10 +168,17 @@ tests/        自动化测试
 - 检索评测集只有 4 篇文档和 8 条查询，属于校准集而非生产基准。
 - 自适应检索延迟实验使用确定性模拟等待，不能作为线上延迟提升结论。
 - 回放测试验证控制流与失败边界，不代表真实 LLM 回复质量。
+- 当前生产执行图尚未接入完整 Response Verifier，也尚未形成 `completed / blocked / failed` 三类业务终止路径。
+- 当前已有工程说明、回放和检索报告，但企业知识协同 Demo 仍缺少成体系的 SOP、故障 Runbook、账务规则和领域评测集。
 - 项目当前更适合作为可运行、可评测的 Agent 工程原型，生产使用仍需补充多租户权限、数据治理、真实流量压测和在线效果监控。
+
+## 路线图
+
+- [#5 完善延迟观测、Verifier 与 Control Deck 证据链](https://github.com/HelicasECoode42/EchoForge/issues/5)
+- [#6 建立 RAG golden set 与可重复回归 Harness](https://github.com/HelicasECoode42/EchoForge/issues/6)
+- [#11 实验条件触发的多步记忆检索](https://github.com/HelicasECoode42/EchoForge/issues/11)：在可信 Verifier 和 golden set 完成后开展。
 
 ## 进一步阅读
 
 - [执行图、Chunking 与检索评测](docs/graph-and-chunking-harness.md)
 - [路由预算、证据 Trace 与离线回放](docs/route-budget-and-replay.md)
-

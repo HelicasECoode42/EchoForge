@@ -106,10 +106,18 @@ class BaseAgent:
     agent_type: AgentType
     system_prompt: str
 
-    def __init__(self, client: AsyncAnthropic, model: str):
+    def __init__(self, client: AsyncAnthropic, model: str, skill_manager: Optional[Any] = None):
         self._client = client
         self._model  = model
+        self._skill_manager = skill_manager
         self.stats   = AgentStats()
+
+    def system_prompt_for(self, message: str) -> str:
+        """Build a request-scoped prompt without mutating the class prompt."""
+        if self._skill_manager is None:
+            return self.system_prompt
+        skill_prompt = self._skill_manager.prompt_for(message, self.agent_type.value)
+        return f"{self.system_prompt}\n\n[动态 Skills]\n{skill_prompt}" if skill_prompt else self.system_prompt
 
     async def handle(self, req: Request) -> AgentResponse:
         t0 = time.monotonic()
@@ -179,7 +187,7 @@ class BaseAgent:
             component=f"agent.{self.agent_type.value}",
             model=self._model,
             max_tokens=1024,
-            system=self.system_prompt,
+            system=self.system_prompt_for(req.message),
             messages=messages,
         )
         return extract_text(resp)
@@ -202,7 +210,7 @@ class BaseAgent:
         async with self._client.messages.stream(
             model=self._model,
             max_tokens=1024,
-            system=self.system_prompt,
+            system=self.system_prompt_for(req.message),
             messages=messages,
             **stream_kwargs,
         ) as stream:
@@ -227,7 +235,7 @@ class BaseAgent:
 class GeneralAgent(BaseAgent):
     agent_type    = AgentType.GENERAL
     system_prompt = (
-        "你是 EchoMind 智能客服。友好、简洁地回答用户问题。"
+        "你是 EchoForge 智能客服。友好、简洁地回答用户问题。"
         "如果问题超出你的能力范围，明确说明并建议转接专业客服。"
     )
 
@@ -279,6 +287,7 @@ class AgentOrchestrator:
         agent_pool: Optional[Dict[AgentType, List[Any]]] = None,
         trace_store: Optional[JsonlRouteTraceStore] = None,
         default_budget: Optional[RoutingBudget] = None,
+        skill_manager: Optional[Any] = None,
     ):
         if agent_pool is None:
             kwargs: Dict[str, Any] = {"api_key": api_key}
@@ -290,9 +299,9 @@ class AgentOrchestrator:
             )
             # Agent 池：每种类型可有多个实例（水平扩展）
             self._pool: Dict[AgentType, List[Any]] = {
-                AgentType.GENERAL:   [GeneralAgent(client, model)],
-                AgentType.TECHNICAL: [TechnicalAgent(client, model)],
-                AgentType.BILLING:   [BillingAgent(client, model)],
+                AgentType.GENERAL:   [GeneralAgent(client, model, skill_manager)],
+                AgentType.TECHNICAL: [TechnicalAgent(client, model, skill_manager)],
+                AgentType.BILLING:   [BillingAgent(client, model, skill_manager)],
             }
         else:
             # 允许回放/测试注入确定性 Agent，不触发任何远端模型调用。
@@ -300,6 +309,15 @@ class AgentOrchestrator:
             self._pool = agent_pool
         self._trace_store = trace_store
         self._default_budget = default_budget or RoutingBudget()
+        self._skill_manager = skill_manager
+
+    def set_skill_manager(self, skill_manager: Optional[Any]) -> None:
+        """Swap the manager after a hot reload while preserving injected test agents."""
+        self._skill_manager = skill_manager
+        for agents in self._pool.values():
+            for agent in agents:
+                if hasattr(agent, "_skill_manager"):
+                    agent._skill_manager = skill_manager
 
     # ── 主入口 ────────────────────────────────────────────────────────────────
 
