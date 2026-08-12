@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from threading import RLock
 from typing import Optional
@@ -43,7 +44,13 @@ class ProposalStore:
             if existing is None:
                 items.append(proposal)
             else:
+                self._validate_identity(existing, proposal)
+                if proposal.status is ProposalStatus.PROPOSED:
+                    # Proposal generation is idempotent. Never replace an
+                    # evaluated artifact with a fresh proposed shell.
+                    return existing
                 self._validate_replacement(existing, proposal)
+                proposal = self._preserve_evaluation_history(existing, proposal)
                 items = [proposal if item.proposal_id == proposal.proposal_id else item for item in items]
             self._write(items)
         return proposal
@@ -63,7 +70,7 @@ class ProposalStore:
         return proposal
 
     @staticmethod
-    def _validate_replacement(
+    def _validate_identity(
         existing: ImprovementProposal,
         replacement: ImprovementProposal,
     ) -> None:
@@ -77,22 +84,43 @@ class ProposalStore:
         )
         if any(getattr(existing, name) != getattr(replacement, name) for name in immutable):
             raise ValueError("proposal identity fields cannot change in the ledger")
-        if existing.status is ProposalStatus.APPROVED:
-            if replacement.status is not ProposalStatus.APPROVED:
-                raise ValueError("approved proposals are terminal and immutable")
-            if existing.approved_at != replacement.approved_at:
-                raise ValueError("approved_at cannot change for an approved proposal")
-            return
+
+    @staticmethod
+    def _validate_replacement(
+        existing: ImprovementProposal,
+        replacement: ImprovementProposal,
+    ) -> None:
+        if existing.status in {
+            ProposalStatus.APPROVED,
+            ProposalStatus.REJECTED,
+            ProposalStatus.NO_CHANGE,
+        }:
+            if replacement.to_dict() == existing.to_dict():
+                return
+            raise ValueError(f"{existing.status.value} proposals are terminal and immutable")
         allowed = {
             ProposalStatus.PROPOSED: {ProposalStatus.PROPOSED, ProposalStatus.CANDIDATE, ProposalStatus.NO_CHANGE, ProposalStatus.REJECTED},
             ProposalStatus.CANDIDATE: {ProposalStatus.CANDIDATE, ProposalStatus.APPROVED, ProposalStatus.REJECTED},
-            ProposalStatus.NO_CHANGE: {ProposalStatus.NO_CHANGE},
-            ProposalStatus.REJECTED: {ProposalStatus.REJECTED},
         }
         if replacement.status not in allowed[existing.status]:
             raise ValueError(
                 f"invalid proposal transition: {existing.status.value} -> {replacement.status.value}"
             )
+
+    @staticmethod
+    def _preserve_evaluation_history(
+        existing: ImprovementProposal,
+        replacement: ImprovementProposal,
+    ) -> ImprovementProposal:
+        """Merge new evidence without discarding prior evaluation artifacts."""
+        history = list(existing.evaluation_history)
+        incoming = replacement.evaluation_history
+        if replacement.evaluation is not None and not incoming:
+            incoming = (replacement.evaluation,)
+        for evaluation in incoming:
+            if evaluation not in history:
+                history.append(evaluation)
+        return replace(replacement, evaluation_history=tuple(history))
 
     def _read(self) -> dict:
         if not self.path.exists() or self.path.stat().st_size == 0:

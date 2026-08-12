@@ -84,13 +84,19 @@ A candidate can only be marked approved by an explicit human action:
 - `GET /improvement/proposals` — list stored proposals, optionally filtered by
   status;
 - `POST /improvement/proposals/generate` — cluster privacy-safe trace metadata
-  and create deterministic recipe proposals;
+  and create deterministic recipe proposals; repeated generation returns the
+  existing ledger artifact for the same proposal identity;
 - `POST /improvement/proposals/{proposal_id}/approve` — record human approval;
 - `POST /improvement/proposals/{proposal_id}/reject` — record human rejection.
 
 The API only writes the offline review ledger. There is intentionally no
 `apply`, `publish`, production config mutation, prompt mutation or memory write
 operation in this feature.
+
+Each proposal keeps its latest evaluation plus an append-only
+`evaluation_history`. Re-running a mutable proposal with a different dataset,
+baseline configuration, or `top_k` therefore preserves the prior evaluation
+context instead of silently replacing the evidence.
 
 These endpoints are local/controlled-offline APIs, not production approval
 services. They are disabled when `APP_ENV=production`; they have no

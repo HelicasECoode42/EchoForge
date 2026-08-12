@@ -29,6 +29,7 @@ async def test_improvement_api_evaluates_lists_and_approves_candidate(tmp_path, 
                 "parameters": {"strategy": "structure_token", "max_tokens": 140},
                 "baseline_parameters": {"strategy": "fixed_char", "chunk_size": 220},
                 "failure_types": ["no_recall"],
+                "description": "Use structure-aware chunks to protect retrievable evidence boundaries.",
             },
         )
         assert response.status_code == 200
@@ -36,6 +37,25 @@ async def test_improvement_api_evaluates_lists_and_approves_candidate(tmp_path, 
         proposal_id = payload["proposal"]["proposal_id"]
         assert payload["proposal"]["status"] == "candidate"
         assert payload["evaluation"]["passed_regression"] is True
+
+        generated = await client.post(
+            "/improvement/proposals/generate",
+            json={
+                "proposal_version": "api.chunking.v1",
+                "traces": [
+                    {
+                        "trace_id": "trace-api-1",
+                        "status": "blocked",
+                        "verification_reason": "insufficient_evidence",
+                        "should_retrieve": True,
+                        "evidence_ids": [],
+                    }
+                ],
+            },
+        )
+        assert generated.status_code == 200
+        assert generated.json()["items"][0]["proposal_id"] == proposal_id
+        assert generated.json()["items"][0]["status"] == "candidate"
 
         listed = await client.get("/improvement/proposals?status=candidate")
         assert listed.status_code == 200

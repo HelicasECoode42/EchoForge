@@ -997,8 +997,10 @@ async def evaluate_improvement(body: ImprovementEvaluateInput):
             dataset_id=dataset_path.stem,
             top_k=body.top_k,
         )
-        _improvement_store().save(report.proposal)
-        return report.to_dict()
+        persisted = _improvement_store().save(report.proposal)
+        payload = report.to_dict()
+        payload["proposal"] = persisted.to_dict()
+        return payload
     except (TypeError, ValueError, KeyError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -1025,9 +1027,8 @@ async def generate_improvement_proposals(body: ImprovementTraceInput):
             proposal_version=body.proposal_version,
         )
         store = _improvement_store()
-        for proposal in proposals:
-            store.save(proposal)
-        return {"items": [proposal.to_dict() for proposal in proposals]}
+        persisted = [store.save(proposal) for proposal in proposals]
+        return {"items": [proposal.to_dict() for proposal in persisted]}
     except (TypeError, ValueError, KeyError) as exc:
         raise HTTPException(400, str(exc)) from exc
 

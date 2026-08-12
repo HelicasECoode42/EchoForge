@@ -9,6 +9,7 @@ from evaluation.improvement import (
     ImprovementProposal,
     ProposalStatus,
     ProposalTarget,
+    EvaluationContext,
     build_evaluation,
 )
 from evaluation.proposal_store import ProposalStore
@@ -73,6 +74,47 @@ class ProposalStoreTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "identity fields"):
                 store.save(replacement)
+
+    def test_re_evaluation_preserves_prior_evidence_context(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = ProposalStore(Path(directory) / "proposals.json")
+            proposal = ImprovementProposal(
+                proposal_version="chunking.audit.v1",
+                source_trace_ids=("trace-audit",),
+                target=ProposalTarget.CHUNK_STRATEGY,
+                parameters={"strategy": "structure_token", "max_tokens": 140},
+            )
+            baseline = EvaluationMetrics(0.8, 0.8, 0.2, 100.0, 400.0, 0.8)
+            improved = EvaluationMetrics(0.9, 0.9, 0.1, 90.0, 350.0, 0.9)
+            first = proposal.with_evaluation(build_evaluation(
+                baseline,
+                improved,
+                context=EvaluationContext(
+                    dataset_id="dataset-a",
+                    dataset_hash="hash-a",
+                    baseline_config_hash="baseline-a",
+                    top_k=3,
+                ),
+            ))
+            store.save(first)
+
+            second = proposal.with_evaluation(build_evaluation(
+                baseline,
+                improved,
+                context=EvaluationContext(
+                    dataset_id="dataset-b",
+                    dataset_hash="hash-b",
+                    baseline_config_hash="baseline-b",
+                    top_k=5,
+                ),
+            ))
+            persisted = store.save(second)
+            loaded = store.get(proposal.proposal_id)
+            assert loaded is not None
+            self.assertEqual(len(persisted.evaluation_history), 2)
+            self.assertEqual(len(loaded.evaluation_history), 2)
+            self.assertEqual(loaded.evaluation_history[0].context.top_k, 3)
+            self.assertEqual(loaded.evaluation_history[1].context.top_k, 5)
 
 
 if __name__ == "__main__":

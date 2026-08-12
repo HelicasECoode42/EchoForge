@@ -254,6 +254,7 @@ class ImprovementProposal:
     status: ProposalStatus = ProposalStatus.PROPOSED
     created_at: str = ""
     evaluation: Optional[ProposalEvaluation] = None
+    evaluation_history: tuple[ProposalEvaluation, ...] = ()
     approved_at: Optional[str] = None
 
     def __post_init__(self) -> None:
@@ -283,6 +284,8 @@ class ImprovementProposal:
             object.__setattr__(self, "created_at", datetime.now(timezone.utc).isoformat())
         if not self.proposal_id:
             object.__setattr__(self, "proposal_id", self._make_id())
+        if self.evaluation is not None and not self.evaluation_history:
+            object.__setattr__(self, "evaluation_history", (self.evaluation,))
         if self.status in {ProposalStatus.CANDIDATE, ProposalStatus.NO_CHANGE} and self.evaluation is None:
             raise ValueError(f"{self.status.value} proposals must include evaluation")
         if self.status is ProposalStatus.CANDIDATE and (
@@ -346,7 +349,12 @@ class ImprovementProposal:
             next_status = ProposalStatus.NO_CHANGE
         else:
             next_status = ProposalStatus.REJECTED
-        return replace(self, evaluation=evaluation, status=next_status)
+        return replace(
+            self,
+            evaluation=evaluation,
+            evaluation_history=self.evaluation_history + (evaluation,),
+            status=next_status,
+        )
 
     def approve(self, approved_at: Optional[str] = None) -> "ImprovementProposal":
         if self.status is not ProposalStatus.CANDIDATE:
@@ -371,6 +379,7 @@ class ImprovementProposal:
         payload["parameters"] = dict(self.parameters)
         if self.evaluation is not None:
             payload["evaluation"] = self.evaluation.to_dict()
+        payload["evaluation_history"] = [item.to_dict() for item in self.evaluation_history]
         return payload
 
     @classmethod
@@ -387,6 +396,10 @@ class ImprovementProposal:
             status=ProposalStatus(payload.get("status", ProposalStatus.PROPOSED.value)),
             created_at=str(payload.get("created_at", "")),
             evaluation=ProposalEvaluation.from_dict(evaluation_payload) if evaluation_payload else None,
+            evaluation_history=tuple(
+                ProposalEvaluation.from_dict(item)
+                for item in payload.get("evaluation_history", [])
+            ),
             approved_at=payload.get("approved_at"),
         )
 
