@@ -17,15 +17,19 @@ class ProposalStore:
     """Persist proposal artifacts without exposing a production apply path.
 
     The file is an offline review ledger, not a runtime configuration store.
+    Store instances for the same canonical path share one process-level lock.
     Writes use a temporary file and replace so an interrupted review cannot
     leave a partially written JSON document.
     """
 
     SCHEMA_VERSION = "1"
+    _LOCKS_GUARD = RLock()
+    _LOCKS: dict[Path, RLock] = {}
 
     def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self._lock = RLock()
+        self.path = Path(path).expanduser().resolve()
+        with self._LOCKS_GUARD:
+            self._lock = self._LOCKS.setdefault(self.path, RLock())
 
     def list(self) -> list[ImprovementProposal]:
         with self._lock:

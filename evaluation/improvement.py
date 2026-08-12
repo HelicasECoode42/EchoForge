@@ -310,6 +310,8 @@ class ImprovementProposal:
             "source_trace_ids": list(self.source_trace_ids),
             "target": self.target.value,
             "parameters": self.parameters,
+            "failure_types": [item.value for item in self.failure_types],
+            "description": self.description,
         }
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return f"proposal-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
