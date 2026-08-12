@@ -37,6 +37,9 @@ fi
 while IFS= read -r test_file; do
   [[ -n "$test_file" ]] && TEST_PATHS+=("$test_file")
 done < <(git ls-files 'core/test_*.py' | grep -v '^core/test_response_verifier.py$')
+while IFS= read -r test_file; do
+  [[ -n "$test_file" ]] && TEST_PATHS+=("$test_file")
+done < <(git ls-files 'tests/test_improvement_*.py')
 
 if (( ${#TEST_PATHS[@]} > 0 )); then
   "$PYTEST_BIN" -q "${TEST_PATHS[@]}"
@@ -46,3 +49,4 @@ fi
 "$PYTHON_BIN" scripts/replay_routes.py --output "$(mktemp -t echoforge-route-replay.XXXXXX.json)"
 "$PYTHON_BIN" scripts/replay_graph.py --output "$(mktemp -t echoforge-graph-replay.XXXXXX.json)"
 "$PYTHON_BIN" scripts/evaluate_chunking.py --output "$(mktemp -t echoforge-chunking.XXXXXX.json)"
+"$PYTHON_BIN" scripts/evaluate_improvement.py --output "$(mktemp -t echoforge-improvement.XXXXXX.json)"
