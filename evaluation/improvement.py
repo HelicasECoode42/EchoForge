@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
@@ -58,19 +59,15 @@ METRIC_DIRECTIONS: Mapping[str, str] = {
     "token_cost": "lower",
 }
 
-_FORBIDDEN_PARAMETER_KEYS = frozenset({
-    "api_key",
-    "authorization",
-    "memory_write",
-    "production",
-    "production_config",
-    "raw_prompt",
-    "secret",
-    "system_prompt",
-})
 _TRACE_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
-_SENSITIVE_DESCRIPTION_RE = re.compile(
-    r"(api[_ -]?key|authorization|secret|system[_ -]?prompt|-----begin|sk-[a-z0-9])",
+_DESCRIPTION_CODE_RE = re.compile(r"^[a-z][a-z0-9._-]{0,119}$")
+_SAFE_VERSION_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
+_SENSITIVE_KEY_RE = re.compile(
+    r"(^|[_-])(api[_-]?key|authorization|credential|password|passwd|prompt|secret|token)($|[_-])",
+    re.IGNORECASE,
+)
+_SENSITIVE_VALUE_RE = re.compile(
+    r"(bearer\s+|-----begin|raw[-_.\s]+user[-_.\s]+prompt|system[-_.\s]+prompt|sk-[a-z0-9_-]{6,})",
     re.IGNORECASE,
 )
 
@@ -89,12 +86,14 @@ class EvaluationMetrics:
     def __post_init__(self) -> None:
         for name in ("recall_at_k", "evidence_coverage", "blocked_rate"):
             value = float(getattr(self, name))
-            if not 0.0 <= value <= 1.0:
+            if not math.isfinite(value) or not 0.0 <= value <= 1.0:
                 raise ValueError(f"{name} must be between 0 and 1")
         for name in ("latency_ms", "token_cost"):
-            if float(getattr(self, name)) < 0.0:
+            if not math.isfinite(float(getattr(self, name))) or float(getattr(self, name)) < 0.0:
                 raise ValueError(f"{name} must be >= 0")
-        if self.mrr is not None and not 0.0 <= float(self.mrr) <= 1.0:
+        if self.mrr is not None and (
+            not math.isfinite(float(self.mrr)) or not 0.0 <= float(self.mrr) <= 1.0
+        ):
             raise ValueError("mrr must be between 0 and 1")
 
     def to_dict(self) -> dict[str, Any]:
@@ -204,6 +203,26 @@ class ProposalEvaluation:
     target_metrics: tuple[str, ...] = ()
     context: EvaluationContext = field(default_factory=EvaluationContext)
 
+    def __post_init__(self) -> None:
+        expected = compare_metrics(
+            self.baseline,
+            self.proposal,
+            tolerances=self.context.tolerances,
+        )
+        if dict(self.comparisons) != expected:
+            raise ValueError("evaluation comparisons do not match metrics and tolerances")
+        targets = set(self.target_metrics) or set(expected)
+        regressions = any(
+            name in targets and item.regressed
+            for name, item in expected.items()
+        )
+        improvements = any(
+            name in targets and item.improved
+            for name, item in expected.items()
+        )
+        if self.passed_regression != (not regressions and improvements):
+            raise ValueError("evaluation gate result does not match metric comparisons")
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "baseline": self.baseline.to_dict(),
@@ -266,10 +285,11 @@ class ImprovementProposal:
             raise ValueError("source_trace_ids must contain at least one non-empty trace id")
         if any(not _TRACE_ID_RE.fullmatch(item) for item in self.source_trace_ids):
             raise ValueError("source_trace_ids must use privacy-safe identifier characters")
-        if len(self.description) > 500 or any(ord(char) < 32 and char not in "\t" for char in self.description):
-            raise ValueError("description must be <= 500 characters without control characters")
-        if _SENSITIVE_DESCRIPTION_RE.search(self.description):
-            raise ValueError("description appears to contain secret or prompt material")
+        if self.description:
+            if not _DESCRIPTION_CODE_RE.fullmatch(self.description):
+                raise ValueError("description must be an auditable machine-readable code")
+            if _SENSITIVE_VALUE_RE.search(self.description):
+                raise ValueError("description contains sensitive string material")
         if not isinstance(self.target, ProposalTarget):
             object.__setattr__(self, "target", ProposalTarget(self.target))
         if not isinstance(self.status, ProposalStatus):
@@ -279,13 +299,20 @@ class ImprovementProposal:
             for item in self.failure_types
         )
         object.__setattr__(self, "failure_types", normalized_failures)
-        self._validate_parameters(self.parameters)
+        self._validate_parameters(self.target, self.parameters)
         if not self.created_at:
             object.__setattr__(self, "created_at", datetime.now(timezone.utc).isoformat())
+        expected_id = self._make_id()
         if not self.proposal_id:
-            object.__setattr__(self, "proposal_id", self._make_id())
+            object.__setattr__(self, "proposal_id", expected_id)
+        elif self.proposal_id != expected_id:
+            raise ValueError("proposal_id does not match immutable identity fields")
         if self.evaluation is not None and not self.evaluation_history:
             object.__setattr__(self, "evaluation_history", (self.evaluation,))
+        if self.evaluation is None and self.evaluation_history:
+            raise ValueError("evaluation_history requires a current evaluation")
+        if self.evaluation is not None and self.evaluation_history[-1] != self.evaluation:
+            raise ValueError("current evaluation must be the latest evaluation_history item")
         if self.status in {ProposalStatus.CANDIDATE, ProposalStatus.NO_CHANGE} and self.evaluation is None:
             raise ValueError(f"{self.status.value} proposals must include evaluation")
         if self.status is ProposalStatus.CANDIDATE and (
@@ -317,28 +344,106 @@ class ImprovementProposal:
         return f"proposal-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()[:16]}"
 
     @staticmethod
-    def _validate_parameters(parameters: Mapping[str, Any]) -> None:
+    def _validate_parameters(target: ProposalTarget, parameters: Mapping[str, Any]) -> None:
         if not isinstance(parameters, Mapping) or not parameters:
             raise ValueError("parameters must be a non-empty mapping")
-        forbidden: set[str] = set()
+        if any(not isinstance(key, str) for key in parameters):
+            raise ValueError("proposal parameter keys must be strings")
 
         def visit(value: Any) -> None:
             if isinstance(value, Mapping):
                 for key, nested in value.items():
-                    key_text = str(key).lower()
-                    if key_text in _FORBIDDEN_PARAMETER_KEYS:
-                        forbidden.add(key_text)
+                    key_text = str(key)
+                    if _SENSITIVE_KEY_RE.search(key_text):
+                        raise ValueError(f"parameters contain sensitive key: {key_text}")
                     visit(nested)
             elif isinstance(value, (list, tuple)):
                 for nested in value:
                     visit(nested)
+            elif isinstance(value, str) and _SENSITIVE_VALUE_RE.search(value):
+                raise ValueError("parameters contain sensitive string material")
 
         visit(parameters)
-        if forbidden:
-            raise ValueError(
-                "parameters contain forbidden production-bound keys: "
-                + ", ".join(sorted(forbidden))
-            )
+        keys = set(parameters)
+
+        def exact(allowed: set[str], required: set[str]) -> None:
+            extras = keys - allowed
+            missing = required - keys
+            if extras or missing:
+                detail = []
+                if extras:
+                    detail.append(f"unexpected={sorted(extras)}")
+                if missing:
+                    detail.append(f"missing={sorted(missing)}")
+                raise ValueError("invalid proposal parameter schema: " + ", ".join(detail))
+
+        def integer(name: str, minimum: int, maximum: int) -> int:
+            value = parameters[name]
+            if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+                raise ValueError(f"{name} must be an integer between {minimum} and {maximum}")
+            return value
+
+        if target is ProposalTarget.CHUNK_STRATEGY:
+            strategy = parameters.get("strategy")
+            if strategy == "fixed_char":
+                exact({"strategy", "chunk_size"}, {"strategy"})
+                if "chunk_size" in parameters:
+                    integer("chunk_size", 1, 100_000)
+            elif strategy == "sliding_window":
+                exact({"strategy", "chunk_size", "overlap"}, {"strategy"})
+                chunk_size = integer("chunk_size", 1, 100_000) if "chunk_size" in parameters else 500
+                overlap = integer("overlap", 0, 99_999) if "overlap" in parameters else 100
+                if overlap >= chunk_size:
+                    raise ValueError("overlap must be smaller than chunk_size")
+            elif strategy == "structure_token":
+                exact({"strategy", "max_tokens"}, {"strategy"})
+                if "max_tokens" in parameters:
+                    integer("max_tokens", 8, 100_000)
+            else:
+                raise ValueError("unsupported chunk strategy")
+            return
+
+        if target is ProposalTarget.RETRIEVAL_POLICY:
+            if keys == {"mode"} and parameters["mode"] == "adaptive":
+                return
+            if keys == {"retry_limit", "fallback"}:
+                integer("retry_limit", 0, 10)
+                if parameters["fallback"] != "deterministic":
+                    raise ValueError("fallback must be deterministic")
+                return
+            if keys == {"adaptive_retrieval", "max_rerank_candidates"}:
+                if parameters["adaptive_retrieval"] is not True:
+                    raise ValueError("adaptive_retrieval must be true")
+                integer("max_rerank_candidates", 1, 100)
+                return
+            raise ValueError("invalid retrieval_policy parameter schema")
+
+        if target is ProposalTarget.REFUSAL_RULE:
+            if keys in ({"require_citation_in_evidence"}, {"reject_stale_evidence"}):
+                if next(iter(parameters.values())) is not True:
+                    raise ValueError("refusal rule flag must be true")
+                return
+            if keys == {"minimum_confidence"}:
+                value = parameters["minimum_confidence"]
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= float(value) <= 1.0:
+                    raise ValueError("minimum_confidence must be between 0 and 1")
+                return
+            raise ValueError("invalid refusal_rule parameter schema")
+
+        if target is ProposalTarget.PROMPT_VERSION:
+            exact({"version"}, {"version"})
+            if not isinstance(parameters["version"], str) or not _SAFE_VERSION_RE.fullmatch(parameters["version"]):
+                raise ValueError("prompt version must be a safe version identifier")
+            return
+
+        if target is ProposalTarget.REWRITE_RERANK:
+            exact({"rewrite_enabled", "rerank_top_k"}, {"rewrite_enabled", "rerank_top_k"})
+            if parameters["rewrite_enabled"] is not True:
+                raise ValueError("rewrite_enabled must be true")
+            integer("rerank_top_k", 1, 100)
+            return
+
+        raise ValueError(f"unsupported proposal target: {target.value}")
 
     def with_evaluation(self, evaluation: ProposalEvaluation) -> "ImprovementProposal":
         """Attach one offline result; approved/rejected artifacts are immutable."""
@@ -448,8 +553,11 @@ def build_evaluation(
 ) -> ProposalEvaluation:
     """Build the regression and measurable-improvement gate result."""
     comparisons = compare_metrics(baseline, proposal, tolerances=tolerances)
-    regressions = [name for name, item in comparisons.items() if item.regressed]
     required_improvements = set(target_metrics) or set(comparisons)
+    regressions = [
+        name for name, item in comparisons.items()
+        if name in required_improvements and item.regressed
+    ]
     improvements = [
         name for name, item in comparisons.items()
         if name in required_improvements and item.improved
@@ -560,32 +668,32 @@ _FAILURE_PROPOSAL_RECIPES: Mapping[FailureType, tuple[ProposalTarget, Mapping[st
     FailureType.NO_RECALL: (
         ProposalTarget.CHUNK_STRATEGY,
         {"strategy": "structure_token", "max_tokens": 140},
-        "Use structure-aware chunks to protect retrievable evidence boundaries.",
+        "chunking.structure-aware-boundaries",
     ),
     FailureType.INCORRECT_CITATION: (
         ProposalTarget.REFUSAL_RULE,
         {"require_citation_in_evidence": True},
-        "Require every emitted citation to belong to retrieved evidence.",
+        "refusal.citation-in-evidence",
     ),
     FailureType.STALE_EVIDENCE: (
         ProposalTarget.REFUSAL_RULE,
         {"reject_stale_evidence": True},
-        "Reject stale evidence before it can support an answer.",
+        "refusal.reject-stale-evidence",
     ),
     FailureType.LOW_CONFIDENCE: (
         ProposalTarget.REFUSAL_RULE,
         {"minimum_confidence": 0.6},
-        "Raise the minimum confidence required for automatic completion.",
+        "refusal.minimum-confidence",
     ),
     FailureType.TOOL_FAILURE: (
         ProposalTarget.RETRIEVAL_POLICY,
         {"retry_limit": 1, "fallback": "deterministic"},
-        "Bound one retry and use an explicit deterministic fallback for tool errors.",
+        "retrieval.bounded-tool-fallback",
     ),
     FailureType.TIMEOUT: (
         ProposalTarget.RETRIEVAL_POLICY,
         {"adaptive_retrieval": True, "max_rerank_candidates": 8},
-        "Reduce expensive retrieval work when the latency budget is exhausted.",
+        "retrieval.adaptive-latency-budget",
     ),
 }
 

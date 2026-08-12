@@ -22,7 +22,7 @@ class ProposalStore:
     leave a partially written JSON document.
     """
 
-    SCHEMA_VERSION = "1"
+    SCHEMA_VERSION = "2"
     _LOCKS_GUARD = RLock()
     _LOCKS: dict[Path, RLock] = {}
 

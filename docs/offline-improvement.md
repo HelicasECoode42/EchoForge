@@ -36,8 +36,9 @@ explicit unsupported-target error until an isolated evaluator is implemented.
 For this retrieval harness, a case with zero evidence coverage counts as
 blocked. Partial coverage remains visible as a quality metric. Retrieval
 latency is the existing local harness overhead, not a production latency
-claim; a small tolerance is used for the regression gate. Context tokens are
-used as the deterministic token-cost proxy.
+claim. It is retained as an observation but is not a deterministic acceptance
+metric; production latency needs a separately warmed, repeated benchmark.
+Context tokens are used as the deterministic token-cost proxy.
 
 ## Run the acceptance suite
 
@@ -108,6 +109,9 @@ design before exposing this workflow outside a controlled environment.
 
 - Proposal provenance uses trace IDs and structured metadata; raw user text and
   prompts are not added to the proposal ledger.
+- Proposal parameters use target-specific schemas that reject unknown fields,
+  sensitive keys/values and invalid ranges. `description` is a bounded
+  machine-readable code rather than free-form text.
 - The first proposal generator is deterministic and recipe-based. It never
   asks an LLM to judge its own output or invent a release decision.
 - Candidate status requires the offline regression gate to pass.

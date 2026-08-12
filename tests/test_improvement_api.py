@@ -29,7 +29,7 @@ async def test_improvement_api_evaluates_lists_and_approves_candidate(tmp_path, 
                 "parameters": {"strategy": "structure_token", "max_tokens": 140},
                 "baseline_parameters": {"strategy": "fixed_char", "chunk_size": 220},
                 "failure_types": ["no_recall"],
-                "description": "Use structure-aware chunks to protect retrievable evidence boundaries.",
+                "description": "chunking.structure-aware-boundaries",
             },
         )
         assert response.status_code == 200

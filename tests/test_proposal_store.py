@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 from evaluation.improvement import (
     EvaluationMetrics,
+    FailureType,
     ImprovementProposal,
     ProposalStatus,
     ProposalTarget,
@@ -65,15 +68,63 @@ class ProposalStoreTests(unittest.TestCase):
                 parameters={"strategy": "structure_token", "max_tokens": 140},
             )
             store.save(proposal)
-            replacement = ImprovementProposal(
-                proposal_version="chunking.v1",
-                source_trace_ids=("trace-identity",),
-                target=ProposalTarget.CHUNK_STRATEGY,
-                parameters={"strategy": "structure_token", "max_tokens": 160},
-                proposal_id=proposal.proposal_id,
+            with self.assertRaisesRegex(ValueError, "proposal_id does not match"):
+                replace(proposal, parameters={"strategy": "structure_token", "max_tokens": 160})
+
+    def test_store_instances_share_path_lock_without_lost_updates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "proposals.json"
+            proposals = tuple(
+                ImprovementProposal(
+                    proposal_version="chunking.concurrent.v1",
+                    source_trace_ids=(f"trace-{index}",),
+                    target=ProposalTarget.CHUNK_STRATEGY,
+                    parameters={"strategy": "structure_token", "max_tokens": 140},
+                )
+                for index in range(2)
             )
-            with self.assertRaisesRegex(ValueError, "identity fields"):
-                store.save(replacement)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                list(pool.map(lambda item: ProposalStore(path).save(item), proposals))
+            self.assertEqual(
+                {item.proposal_id for item in ProposalStore(path).list()},
+                {item.proposal_id for item in proposals},
+            )
+
+    def test_concurrent_terminal_decisions_only_commit_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "proposals.json"
+            proposal = ImprovementProposal(
+                proposal_version="chunking.decision.v1",
+                source_trace_ids=("trace-decision",),
+                target=ProposalTarget.CHUNK_STRATEGY,
+                parameters={"strategy": "structure_token", "max_tokens": 140},
+                failure_types=(FailureType.NO_RECALL,),
+            )
+            candidate = proposal.with_evaluation(build_evaluation(
+                EvaluationMetrics(0.8, 0.8, 0.2, 100.0, 400.0),
+                EvaluationMetrics(0.9, 0.9, 0.1, 90.0, 350.0),
+            ))
+            ProposalStore(path).save(candidate)
+
+            def decide(action):
+                try:
+                    action(ProposalStore(path))
+                    return "committed"
+                except ValueError:
+                    return "conflict"
+
+            actions = (
+                lambda store: store.approve(candidate.proposal_id, approved_at="2026-08-12T00:00:00+00:00"),
+                lambda store: store.reject(candidate.proposal_id),
+            )
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                outcomes = list(pool.map(decide, actions))
+            self.assertEqual(outcomes.count("committed"), 1)
+            self.assertEqual(outcomes.count("conflict"), 1)
+            self.assertIn(
+                ProposalStore(path).get(candidate.proposal_id).status,
+                {ProposalStatus.APPROVED, ProposalStatus.REJECTED},
+            )
 
     def test_re_evaluation_preserves_prior_evidence_context(self):
         with tempfile.TemporaryDirectory() as directory:
