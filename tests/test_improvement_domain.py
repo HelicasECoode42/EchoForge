@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from evaluation.improvement import (
+    EvaluationContext,
     EvaluationMetrics,
     FailureType,
     ImprovementProposal,
@@ -168,6 +169,41 @@ class ImprovementDomainTests(unittest.TestCase):
         )
         self.assertTrue(evaluation.passed_regression)
         self.assertTrue(evaluation.comparisons["latency_ms"].regressed)
+
+    def test_non_target_latency_observation_does_not_turn_no_change_into_rejected(self):
+        baseline = EvaluationMetrics(0.8, 0.8, 0.2, 1.0, 400.0)
+        proposal_metrics = EvaluationMetrics(0.8, 0.8, 0.2, 999.0, 400.0)
+        proposal = ImprovementProposal(
+            proposal_version="retrieval.latency-observed.v1",
+            source_trace_ids=("trace-latency-observed",),
+            target=ProposalTarget.RETRIEVAL_POLICY,
+            parameters={"mode": "adaptive"},
+        )
+
+        evaluated = proposal.with_evaluation(build_evaluation(
+            baseline,
+            proposal_metrics,
+            target_metrics=("recall_at_k", "precision_at_k", "hallucination_rate", "token_cost"),
+        ))
+        self.assertEqual(evaluated.status, ProposalStatus.NO_CHANGE)
+        self.assertTrue(evaluated.evaluation.comparisons["latency_ms"].regressed)
+
+    def test_build_evaluation_uses_context_tolerances_as_single_source_of_truth(self):
+        baseline = EvaluationMetrics(0.8, 0.8, 0.2, 100.0, 400.0)
+        proposal = EvaluationMetrics(0.81, 0.8, 0.2, 100.0, 400.0)
+        context = EvaluationContext(tolerances={"recall_at_k": 0.02})
+
+        evaluation = build_evaluation(baseline, proposal, context=context)
+        self.assertEqual(evaluation.context.tolerances, {"recall_at_k": 0.02})
+        self.assertFalse(evaluation.comparisons["recall_at_k"].improved)
+
+        with self.assertRaisesRegex(ValueError, "tolerances must match"):
+            build_evaluation(
+                baseline,
+                proposal,
+                context=context,
+                tolerances={"recall_at_k": 0.0},
+            )
 
     def test_approved_proposal_is_terminal(self):
         metrics = EvaluationMetrics(0.8, 0.8, 0.2, 100.0, 400.0)

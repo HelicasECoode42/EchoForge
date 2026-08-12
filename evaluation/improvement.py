@@ -449,7 +449,11 @@ class ImprovementProposal:
         """Attach one offline result; approved/rejected artifacts are immutable."""
         if self.status is not ProposalStatus.PROPOSED:
             raise ValueError("only proposed artifacts can be evaluated")
-        has_regression = any(item.regressed for item in evaluation.comparisons.values())
+        targets = set(evaluation.target_metrics) or set(evaluation.comparisons)
+        has_regression = any(
+            name in targets and item.regressed
+            for name, item in evaluation.comparisons.items()
+        )
         if evaluation.passed_regression:
             next_status = ProposalStatus.CANDIDATE
         elif not has_regression:
@@ -552,7 +556,12 @@ def build_evaluation(
     context: Optional[EvaluationContext] = None,
 ) -> ProposalEvaluation:
     """Build the regression and measurable-improvement gate result."""
-    comparisons = compare_metrics(baseline, proposal, tolerances=tolerances)
+    if context is None:
+        context = EvaluationContext(tolerances=dict(tolerances or {}))
+    elif tolerances is not None and dict(context.tolerances) != dict(tolerances):
+        raise ValueError("tolerances must match evaluation context tolerances")
+
+    comparisons = compare_metrics(baseline, proposal, tolerances=context.tolerances)
     required_improvements = set(target_metrics) or set(comparisons)
     regressions = [
         name for name, item in comparisons.items()
@@ -580,7 +589,7 @@ def build_evaluation(
         cases=cases,
         evaluated_at=datetime.now(timezone.utc).isoformat(),
         target_metrics=tuple(target_metrics),
-        context=context or EvaluationContext(tolerances=dict(tolerances or {})),
+        context=context,
     )
 
 
