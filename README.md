@@ -20,6 +20,7 @@ EchoForge 是个人学习、研究与求职展示项目，主要用于验证 Mul
 - **自适应检索策略**：高置信查询跳过 Rewrite / Rerank；不确定查询保留多查询召回和重排链路。
 - **动态 Skills**：按 Agent 与关键词注入业务 SOP，通过 `/skills` 查看状态并用 `/skills/reload` 热加载。
 - **工程可靠性**：工具调用支持缓存、熔断、降级和调用预算，Prometheus 暴露运行指标。
+- **离线改进闭环**：从脱敏 Trace 聚类失败、生成版本化 proposal，在隔离 Harness 中回放并对比指标；candidate 仍需人工批准，不能自动修改生产配置。
 
 ## 请求链路
 
@@ -140,12 +141,15 @@ python scripts/evaluate_vector_retrieval.py
 
 # 自适应 Rewrite / Rerank 调用次数基准
 python scripts/benchmark_retrieval_policy.py
+
+# 离线 proposal 改进回放
+python scripts/evaluate_improvement.py
 ```
 
 运行测试：
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
 ## 主要目录
@@ -155,7 +159,7 @@ agents/       专业 Agent 与路由编排
 api/          FastAPI 服务入口
 core/         意图识别与有界执行图
 evidence/     Route / Graph Trace
-evaluation/   检索、路由与图回放评测
+evaluation/    检索、路由、图回放与离线 proposal 评测
 mcp/          知识库与工具管理
 memory/       会话记忆与长期记忆
 retrieval/    Chunking 与 Embedding
@@ -168,7 +172,10 @@ tests/        自动化测试
 - 检索评测集只有 4 篇文档和 8 条查询，属于校准集而非生产基准。
 - 自适应检索延迟实验使用确定性模拟等待，不能作为线上延迟提升结论。
 - 回放测试验证控制流与失败边界，不代表真实 LLM 回复质量。
-- 当前生产执行图尚未接入完整 Response Verifier，也尚未形成 `completed / blocked / failed` 三类业务终止路径。
+- 当前生产执行图已接入 Response Verifier，并形成 `completed / blocked / failed` 三类业务终止路径；真实模型质量仍需独立评测。
+- 当前离线 proposal 回放首期只支持 `chunk_strategy`；rewrite/rerank、拒答规则和 Prompt 版本只有结构化 proposal 契约，尚未提供对应的隔离评测器。
+- proposal 的人工批准只写入离线审计 ledger，不会自动发布或修改生产配置。
+- `/improvement/*` 是本地/受控离线 API；`APP_ENV=production` 时禁用，当前没有鉴权，也不提供跨进程 ProposalStore 锁，不能直接作为生产审批服务。
 - 当前已有工程说明、回放和检索报告，但企业知识协同 Demo 仍缺少成体系的 SOP、故障 Runbook、账务规则和领域评测集。
 - 项目当前更适合作为可运行、可评测的 Agent 工程原型，生产使用仍需补充多租户权限、数据治理、真实流量压测和在线效果监控。
 
@@ -182,3 +189,4 @@ tests/        自动化测试
 
 - [执行图、Chunking 与检索评测](docs/graph-and-chunking-harness.md)
 - [路由预算、证据 Trace 与离线回放](docs/route-budget-and-replay.md)
+- [离线 proposal-based improvement 闭环](docs/offline-improvement.md)

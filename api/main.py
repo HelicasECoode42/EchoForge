@@ -786,6 +786,24 @@ class EvalRunInput(BaseModel):
     dialog_cases: Optional[List[EvalDialogInput]] = None
 
 
+class ImprovementEvaluateInput(BaseModel):
+    """Offline proposal replay request; it never mutates runtime settings."""
+    proposal_version: str
+    source_trace_ids: List[str]
+    target: str
+    parameters: Dict[str, Any]
+    baseline_parameters: Dict[str, Any]
+    failure_types: List[str] = Field(default_factory=list)
+    description: str = ""
+    top_k: int = Field(3, ge=1, le=20)
+
+
+class ImprovementTraceInput(BaseModel):
+    """Privacy-safe traces used to create deterministic review proposals."""
+    traces: List[Dict[str, Any]]
+    proposal_version: str = "offline-recipes.v1"
+
+
 @app.post("/knowledge/add", tags=["知识库"])
 async def add_knowledge(body: BatchDocInput):
     """
@@ -924,6 +942,121 @@ async def run_eval(body: Optional[EvalRunInput] = None):
             for r in report.results
         ],
     }
+
+
+def _improvement_store():
+    from evaluation.proposal_store import ProposalStore
+
+    path = os.getenv(
+        "IMPROVEMENT_PROPOSAL_PATH",
+        str(pathlib.Path(_ROOT) / "data" / "eval" / "improvement_proposals.json"),
+    )
+    return ProposalStore(path)
+
+
+def _ensure_offline_improvement_environment() -> None:
+    if os.getenv("APP_ENV", "development").strip().lower() == "production":
+        raise HTTPException(
+            403,
+            "offline improvement APIs are disabled in production; use a controlled offline environment",
+        )
+
+
+def _improvement_dataset_path() -> pathlib.Path:
+    path = pathlib.Path(os.getenv(
+        "IMPROVEMENT_DATASET_PATH",
+        str(pathlib.Path(_ROOT) / "data" / "chunking" / "cases.json"),
+    )).resolve()
+    if not path.is_file():
+        raise HTTPException(500, f"offline improvement dataset not found: {path}")
+    return path
+
+
+@app.post("/improvement/evaluate", tags=["离线改进"])
+async def evaluate_improvement(body: ImprovementEvaluateInput):
+    """Evaluate a proposal in the deterministic offline harness."""
+    _ensure_offline_improvement_environment()
+    from evaluation.improvement import ImprovementProposal
+    from evaluation.improvement_harness import load_replay_dataset, replay_chunk_proposal
+
+    try:
+        proposal = ImprovementProposal(
+            proposal_version=body.proposal_version,
+            source_trace_ids=tuple(body.source_trace_ids),
+            target=body.target,
+            parameters=body.parameters,
+            failure_types=tuple(body.failure_types),
+            description=body.description,
+        )
+        dataset_path = _improvement_dataset_path()
+        dataset = load_replay_dataset(dataset_path)
+        report = replay_chunk_proposal(
+            proposal,
+            baseline_parameters=body.baseline_parameters,
+            dataset=dataset,
+            dataset_id=dataset_path.stem,
+            top_k=body.top_k,
+        )
+        persisted = _improvement_store().save(report.proposal)
+        payload = report.to_dict()
+        payload["proposal"] = persisted.to_dict()
+        return payload
+    except (TypeError, ValueError, KeyError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/improvement/proposals", tags=["离线改进"])
+async def list_improvement_proposals(status: Optional[str] = None):
+    """List offline proposals and their evaluation/approval state."""
+    _ensure_offline_improvement_environment()
+    items = _improvement_store().list()
+    if status:
+        items = [item for item in items if item.status.value == status]
+    return {"items": [item.to_dict() for item in items]}
+
+
+@app.post("/improvement/proposals/generate", tags=["离线改进"])
+async def generate_improvement_proposals(body: ImprovementTraceInput):
+    """Cluster traces and create reviewable proposals without applying them."""
+    _ensure_offline_improvement_environment()
+    from evaluation.improvement import generate_proposals_from_traces
+
+    try:
+        proposals = generate_proposals_from_traces(
+            body.traces,
+            proposal_version=body.proposal_version,
+        )
+        store = _improvement_store()
+        persisted = [store.save(proposal) for proposal in proposals]
+        return {"items": [proposal.to_dict() for proposal in persisted]}
+    except (TypeError, ValueError, KeyError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/improvement/proposals/{proposal_id}/approve", tags=["离线改进"])
+async def approve_improvement_proposal(proposal_id: str):
+    """Record human approval; no production configuration is changed."""
+    _ensure_offline_improvement_environment()
+    try:
+        proposal = _improvement_store().approve(proposal_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"proposal": proposal.to_dict(), "action": "approved"}
+
+
+@app.post("/improvement/proposals/{proposal_id}/reject", tags=["离线改进"])
+async def reject_improvement_proposal(proposal_id: str):
+    """Record human rejection without applying anything to the runtime."""
+    _ensure_offline_improvement_environment()
+    try:
+        proposal = _improvement_store().reject(proposal_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"proposal": proposal.to_dict(), "action": "rejected"}
 
 
 # ── 交互式 CLI ────────────────────────────────────────────────────────────────

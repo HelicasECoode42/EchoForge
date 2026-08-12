@@ -10,6 +10,12 @@ node_modules/
 
 # Tests are kept locally for validation and are not versioned in this deployment tree.
 tests/
+!tests/
+tests/*
+!tests/test_improvement_domain.py
+!tests/test_improvement_harness.py
+!tests/test_proposal_store.py
+!tests/test_improvement_api.py
 
 # 环境变量（含敏感信息）
 .env

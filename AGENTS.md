@@ -7,6 +7,7 @@
 - `core/response_verifier.py` — independent execution, grounding and task verifiers.
 - `agents/agent_orchestrator.py` — routing, structured answer parsing and route evidence.
 - `evidence/route_trace.py` — privacy-preserving route trace with evidence/citation metadata.
+- `evaluation/improvement.py` and `evaluation/improvement_harness.py` — offline proposal contracts, failure classification and isolated replay.
 
 ## Knowledge index
 
@@ -33,5 +34,6 @@
 - Changes to graph transitions require graph/replay regression tests.
 - Response contract or verifier changes require verifier tests.
 - Retrieval/evidence changes require evidence-ID and grounding tests.
+- Offline improvement changes require proposal state, metric-direction and improved/regressed replay tests.
 - Keep raw user text and prompts out of persisted route traces.
 - New reusable conclusions must be added to the relevant module `AGENTS.md` and linked here.
