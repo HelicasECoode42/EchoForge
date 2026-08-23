@@ -27,6 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel, Field
+from monitor.request_metrics import RequestMetrics
 
 load_dotenv()
 
@@ -56,7 +57,16 @@ _graph_trace_store = None
 _chat_graph   = None
 _skill_manager = None
 _background_tasks: set[asyncio.Task[Any]] = set()
+_request_metrics = RequestMetrics()
 _PLACEHOLDER_SECRET_PREFIXES = ("your-", "replace-", "change-me", "placeholder")
+
+
+def _record_request_metrics(graph_result: Any) -> None:
+    """Observability must never turn a completed request into a failure."""
+    try:
+        _request_metrics.record(graph_result)
+    except Exception:
+        logger.exception("request metrics recording failed")
 
 
 def _track_background_task(coro, *, name: str) -> asyncio.Task[Any]:
@@ -514,6 +524,7 @@ async def chat(req: ChatRequest):
         raise HTTPException(503, "服务未就绪")
     conv_id = req.conv_id or str(uuid.uuid4())
     graph_result = await _chat_graph.run({"request": req, "conv_id": conv_id})
+    _record_request_metrics(graph_result)
     if graph_result.trace.stop_reason != "completed" or "orchestrator_result" not in graph_result.state:
         logger.error(
             "chat graph failed trace=%s stop_reason=%s",
@@ -586,6 +597,7 @@ async def chat_stream(req: ChatRequest):
                 "conv_id": conv_id,
                 "progress_sink": sink,
             })
+            _record_request_metrics(result)
             if result.trace.stop_reason != "completed" or "orchestrator_result" not in result.state:
                 await emit("error", {
                     "message": "Agent pipeline did not complete",

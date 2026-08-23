@@ -8,5 +8,6 @@ Invariants:
 - `persist_memory` is reachable only after `verification_status == completed`.
 - Streaming tokens are buffered until verification succeeds.
 - API responses expose graph trace, route trace, evidence IDs, citations and verifier statuses.
+- Request metrics may label only bounded pipeline/verifier states and fixed graph stages. Never use user IDs, prompts, evidence text or trace IDs as Prometheus labels.
 
 When changing graph edges, update `tests/test_execution_graph.py` or add a graph replay case.

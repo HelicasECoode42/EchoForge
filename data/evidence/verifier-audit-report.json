@@ -1,0 +1,419 @@
+{
+  "evaluation_scope": "deterministic_verifier_labeled_audit",
+  "dataset_version": "verifier-audit.v1",
+  "dataset_status": "author_review_required",
+  "cases": 24,
+  "legacy_metrics": {
+    "accuracy": 0.625,
+    "accept_precision": 0.4286,
+    "accept_recall": 0.375,
+    "false_accept_rate": 0.25,
+    "false_block_rate": 0.625,
+    "dangerous_false_accepts": 4,
+    "false_blocks": 5
+  },
+  "metrics": {
+    "accuracy": 0.9167,
+    "accept_precision": 1.0,
+    "accept_recall": 0.75,
+    "false_accept_rate": 0.0,
+    "false_block_rate": 0.25,
+    "dangerous_false_accepts": 0,
+    "false_blocks": 2
+  },
+  "categories": {
+    "citation_subset": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "empty_evidence": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "empty_response": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "execution_failure": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "irrelevant_evidence": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "low_confidence": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "missing_citation": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "missing_evidence": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "missing_trace": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "needs_human": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "numeric_mismatch": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "polarity_mismatch": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "route_incomplete": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "supported": {
+      "cases": 8,
+      "passed": 6,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 2
+    },
+    "unknown_citation": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "unresolved": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    },
+    "unsupported_addition": {
+      "cases": 1,
+      "passed": 1,
+      "dangerous_false_accepts": 0,
+      "false_blocks": 0
+    }
+  },
+  "boundary": "This audit measures only labeled deterministic cases. It cannot establish semantic entailment, real-user quality, or production readiness.",
+  "cases_detail": [
+    {
+      "case_id": "supported-01",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "completed",
+      "observed_reason": "execution_grounding_task_verified",
+      "legacy_status": "completed",
+      "legacy_reason": "execution_grounding_task_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "supported-02",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "completed",
+      "observed_reason": "execution_grounding_task_verified",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_supporting_answer",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "supported-03",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "completed",
+      "observed_reason": "execution_grounding_task_verified",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_supporting_answer",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "supported-04",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "completed",
+      "observed_reason": "execution_grounding_task_verified",
+      "legacy_status": "completed",
+      "legacy_reason": "execution_grounding_task_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "supported-05",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "completed",
+      "observed_reason": "execution_grounding_task_verified",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_supporting_answer",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "supported-06",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "blocked",
+      "observed_reason": "citation_support_below_threshold",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_supporting_answer",
+      "passed": false,
+      "dangerous_false_accept": false,
+      "false_block": true
+    },
+    {
+      "case_id": "supported-07",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "completed",
+      "observed_reason": "execution_grounding_task_verified",
+      "legacy_status": "completed",
+      "legacy_reason": "execution_grounding_task_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "supported-08",
+      "category": "supported",
+      "expected_status": "completed",
+      "observed_status": "blocked",
+      "observed_reason": "citation_support_below_threshold",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_supporting_answer",
+      "passed": false,
+      "dangerous_false_accept": false,
+      "false_block": true
+    },
+    {
+      "case_id": "false-accept-01",
+      "category": "numeric_mismatch",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "answer_number_not_in_evidence",
+      "legacy_status": "completed",
+      "legacy_reason": "execution_grounding_task_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "false-accept-02",
+      "category": "polarity_mismatch",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "answer_polarity_conflicts_with_evidence",
+      "legacy_status": "completed",
+      "legacy_reason": "execution_grounding_task_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "false-accept-03",
+      "category": "unsupported_addition",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "citation_support_below_threshold",
+      "legacy_status": "completed",
+      "legacy_reason": "execution_grounding_task_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "false-accept-04",
+      "category": "empty_evidence",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "cited_evidence_empty",
+      "legacy_status": "completed",
+      "legacy_reason": "execution_grounding_task_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-01",
+      "category": "missing_evidence",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "insufficient_evidence",
+      "legacy_status": "blocked",
+      "legacy_reason": "insufficient_evidence",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-02",
+      "category": "missing_citation",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "citation_missing",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_missing",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-03",
+      "category": "unknown_citation",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "citation_not_in_retrieval",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_in_retrieval",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-04",
+      "category": "irrelevant_evidence",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "answer_number_not_in_evidence",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_supporting_answer",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-05",
+      "category": "needs_human",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "needs_human",
+      "legacy_status": "blocked",
+      "legacy_reason": "needs_human",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-06",
+      "category": "unresolved",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "unresolved_task",
+      "legacy_status": "blocked",
+      "legacy_reason": "unresolved_task",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-07",
+      "category": "low_confidence",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "low_confidence",
+      "legacy_status": "blocked",
+      "legacy_reason": "low_confidence",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-08",
+      "category": "route_incomplete",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "route_not_verified",
+      "legacy_status": "blocked",
+      "legacy_reason": "route_not_verified",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-09",
+      "category": "empty_response",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "empty_response",
+      "legacy_status": "blocked",
+      "legacy_reason": "empty_response",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "block-10",
+      "category": "missing_trace",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "missing_route_trace",
+      "legacy_status": "blocked",
+      "legacy_reason": "missing_route_trace",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "failed-01",
+      "category": "execution_failure",
+      "expected_status": "failed",
+      "observed_status": "failed",
+      "observed_reason": "agent_execution_failed",
+      "legacy_status": "failed",
+      "legacy_reason": "agent_execution_failed",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    },
+    {
+      "case_id": "false-accept-05",
+      "category": "citation_subset",
+      "expected_status": "blocked",
+      "observed_status": "blocked",
+      "observed_reason": "citation_support_below_threshold",
+      "legacy_status": "blocked",
+      "legacy_reason": "citation_not_supporting_answer",
+      "passed": true,
+      "dangerous_false_accept": false,
+      "false_block": false
+    }
+  ]
+}

@@ -59,6 +59,50 @@ def test_response_verifier_rejects_citation_outside_retrieval():
     assert verification.reason == "citation_not_in_retrieval"
 
 
+def test_response_verifier_rejects_number_not_present_in_evidence():
+    verification = verify_orchestrator_result(
+        _result(response="退款需要 7 个工作日", citations=["chunk_12"]),
+        evidence_ids=["chunk_12"],
+        evidence_items={"chunk_12": {"content": "退款需要 3 个工作日。"}},
+        knowledge_required=True,
+    )
+    assert verification.status == "blocked"
+    assert verification.reason == "answer_number_not_in_evidence"
+
+
+def test_response_verifier_rejects_polarity_conflict():
+    verification = verify_orchestrator_result(
+        _result(response="Order can be refunded after 30 days.", citations=["chunk_12"]),
+        evidence_ids=["chunk_12"],
+        evidence_items={"chunk_12": {"content": "Order cannot be refunded after 30 days."}},
+        knowledge_required=True,
+    )
+    assert verification.status == "blocked"
+    assert verification.reason == "answer_polarity_conflicts_with_evidence"
+
+
+def test_response_verifier_rejects_chinese_polarity_conflict():
+    verification = verify_orchestrator_result(
+        _result(response="访客可以提交剧情道具", citations=["chunk_12"]),
+        evidence_ids=["chunk_12"],
+        evidence_items={"chunk_12": {"content": "访客不可以提交剧情道具。"}},
+        knowledge_required=True,
+    )
+    assert verification.status == "blocked"
+    assert verification.reason == "answer_polarity_conflicts_with_evidence"
+
+
+def test_response_verifier_rejects_empty_cited_evidence():
+    verification = verify_orchestrator_result(
+        _result(response="退款需要 3 个工作日", citations=["chunk_12"]),
+        evidence_ids=["chunk_12"],
+        evidence_items={"chunk_12": {"content": ""}},
+        knowledge_required=True,
+    )
+    assert verification.status == "blocked"
+    assert verification.reason == "cited_evidence_empty"
+
+
 def test_response_verifier_blocks_task_that_requests_human():
     verification = verify_orchestrator_result(_result(needs_human=True))
     assert verification.status == "blocked"

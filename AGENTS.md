@@ -37,3 +37,4 @@
 - Offline improvement changes require proposal state, metric-direction and improved/regressed replay tests.
 - Keep raw user text and prompts out of persisted route traces.
 - New reusable conclusions must be added to the relevant module `AGENTS.md` and linked here.
+- `data/eval/rag_golden_set.v1.json` and `data/eval/verifier_audit.v1.json` are synthetic, author-review-required baselines. Never present their metrics as production accuracy or semantic entailment.

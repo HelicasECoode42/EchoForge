@@ -1,0 +1,36 @@
+{
+  "version": "verifier-audit.v1",
+  "status": "author_review_required",
+  "notes": [
+    "Labels are repository-authored and must be reviewed by a human before any resume or release claim.",
+    "Completed is treated as the positive class. A false accept is more dangerous than a false block.",
+    "The set targets deterministic verifier behavior; it is not a semantic-entailment benchmark."
+  ],
+  "cases": [
+    {"id":"supported-01","category":"supported","answer":"退款需要 3-5 个工作日","citations":["c1"],"evidence":{"c1":"退款到账通常需要 3-5 个工作日。"},"knowledge_required":true,"expected_status":"completed"},
+    {"id":"supported-02","category":"supported","answer":"额外奖励需要前往冒险家协会领取","citations":["c1"],"evidence":{"c1":"完成四项委托后，玩家需要前往冒险家协会领取额外奖励。"},"knowledge_required":true,"expected_status":"completed"},
+    {"id":"supported-03","category":"supported","answer":"访客不能提交剧情道具","citations":["c1"],"evidence":{"c1":"联机时提交剧情道具必须由房主操作，访客不能提交。"},"knowledge_required":true,"expected_status":"completed"},
+    {"id":"supported-04","category":"supported","answer":"Route replay stores hashes, not raw prompts.","citations":["c1"],"evidence":{"c1":"Route replay stores message hashes and lengths, not raw prompts."},"knowledge_required":true,"expected_status":"completed"},
+    {"id":"supported-05","category":"supported","answer":"日常委托会在次日刷新时失效","citations":["c1"],"evidence":{"c1":"未完成的日常委托会在次日刷新时失效。"},"knowledge_required":true,"expected_status":"completed"},
+    {"id":"supported-06","category":"supported","answer":"知识库没有说明客服电话","citations":["c1"],"evidence":{"c1":"当前文档仅描述任务结算规则，没有客服电话信息。"},"knowledge_required":true,"expected_status":"completed"},
+    {"id":"supported-07","category":"supported","answer":"你好，我可以帮你处理问题","citations":[],"evidence":{},"knowledge_required":false,"expected_status":"completed"},
+    {"id":"supported-08","category":"supported","answer":"任务实例号用于避免重复结算","citations":["c2"],"evidence":{"c1":"每天可以接取四项委托。","c2":"结算请求使用任务实例号保证幂等。"},"knowledge_required":true,"expected_status":"completed"},
+
+    {"id":"false-accept-01","category":"numeric_mismatch","answer":"退款需要 7 个工作日","citations":["c1"],"evidence":{"c1":"退款需要 3 个工作日。"},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"false-accept-02","category":"polarity_mismatch","answer":"Order can be refunded after 30 days.","citations":["c1"],"evidence":{"c1":"Order cannot be refunded after 30 days."},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"false-accept-03","category":"unsupported_addition","answer":"退款需要 3 天并且免手续费","citations":["c1"],"evidence":{"c1":"退款需要 3 天。"},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"false-accept-04","category":"empty_evidence","answer":"退款需要 3 天","citations":["c1"],"evidence":{"c1":""},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"block-01","category":"missing_evidence","answer":"退款需要 3 天","citations":[],"evidence":{},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"block-02","category":"missing_citation","answer":"退款需要 3 天","citations":[],"evidence":{"c1":"退款需要 3 天。"},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"block-03","category":"unknown_citation","answer":"退款需要 3 天","citations":["other"],"evidence":{"c1":"退款需要 3 天。"},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"block-04","category":"irrelevant_evidence","answer":"退款需要 3 天","citations":["c1"],"evidence":{"c1":"玩家每天可以接取四项委托。"},"knowledge_required":true,"expected_status":"blocked"},
+    {"id":"block-05","category":"needs_human","answer":"我无法确认，需要人工处理","citations":[],"evidence":{},"knowledge_required":false,"needs_human":true,"expected_status":"blocked"},
+    {"id":"block-06","category":"unresolved","answer":"我只完成了问题的一部分","citations":[],"evidence":{},"knowledge_required":false,"unresolved":["missing_order_id"],"expected_status":"blocked"},
+    {"id":"block-07","category":"low_confidence","answer":"可能是这样","citations":[],"evidence":{},"knowledge_required":false,"confidence":0.4,"expected_status":"blocked"},
+    {"id":"block-08","category":"route_incomplete","answer":"部分回答","citations":[],"evidence":{},"knowledge_required":false,"route_stop_reason":"budget_exhausted","expected_status":"blocked"},
+    {"id":"block-09","category":"empty_response","answer":"","citations":[],"evidence":{},"knowledge_required":false,"expected_status":"blocked"},
+    {"id":"block-10","category":"missing_trace","answer":"回答存在但没有 trace","citations":[],"evidence":{},"knowledge_required":false,"route_trace":null,"expected_status":"blocked"},
+    {"id":"failed-01","category":"execution_failure","answer":"调用失败后的占位文本","citations":[],"evidence":{},"knowledge_required":false,"success":false,"expected_status":"failed"},
+    {"id":"false-accept-05","category":"citation_subset","answer":"任务每天刷新，而且所有访客都能领取奖励","citations":["c1"],"evidence":{"c1":"未完成的日常委托会在次日刷新时失效。"},"knowledge_required":true,"expected_status":"blocked"}
+  ]
+}

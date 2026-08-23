@@ -52,8 +52,75 @@ def _execution_verifier(result: Any) -> tuple[str, str, dict[str, Any]]:
     }
 
 
+_ASCII_TOKEN_RE = re.compile(r"[a-z_]+|\d+(?:\.\d+)?", re.IGNORECASE)
+_CJK_RUN_RE = re.compile(r"[\u3400-\u9fff]+")
+_NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+_MIN_GROUNDING_COVERAGE = 0.55
+
+
 def _tokens(text: str) -> set[str]:
-    return set(re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]{2,}", (text or "").lower()))
+    """Return lexical features suitable for Chinese and English overlap.
+
+    A whole Chinese sentence must not become one token: that produced false
+    blocks for supported paraphrases while a single shared number could still
+    produce a false accept. Character bigrams give the deterministic verifier
+    a bounded, inspectable overlap signal without pretending to be entailment.
+    """
+    lowered = (text or "").lower()
+    features = set(_ASCII_TOKEN_RE.findall(lowered))
+    for run in _CJK_RUN_RE.findall(lowered):
+        if len(run) == 1:
+            features.add(run)
+        else:
+            features.update(run[index:index + 2] for index in range(len(run) - 1))
+    return features
+
+
+def _polarity(text: str) -> set[str]:
+    lowered = (text or "").lower()
+    negative_markers = ("不能", "不可以", "不会", "不得", "禁止", "无需", "没有", "未能")
+    positive_markers = ("可以", "能够", "允许")
+    polarity: set[str] = set()
+    if any(marker in lowered for marker in negative_markers) or re.search(r"\b(cannot|can't|not|never)\b", lowered):
+        polarity.add("negative")
+    positive_text = lowered
+    for marker in negative_markers:
+        positive_text = positive_text.replace(marker, "")
+    if any(marker in positive_text for marker in positive_markers) or re.search(r"\b(can|may|allowed)\b", positive_text):
+        polarity.add("positive")
+    return polarity
+
+
+def _grounding_support(answer: str, cited_text: str) -> tuple[bool, str, dict[str, Any]]:
+    if not cited_text.strip():
+        return False, "cited_evidence_empty", {"support_coverage": 0.0}
+
+    answer_numbers = set(_NUMBER_RE.findall(answer))
+    evidence_numbers = set(_NUMBER_RE.findall(cited_text))
+    missing_numbers = sorted(answer_numbers - evidence_numbers)
+    if missing_numbers:
+        return False, "answer_number_not_in_evidence", {"missing_numbers": missing_numbers}
+
+    answer_polarity = _polarity(answer)
+    evidence_polarity = _polarity(cited_text)
+    if answer_polarity and evidence_polarity and answer_polarity.isdisjoint(evidence_polarity):
+        return False, "answer_polarity_conflicts_with_evidence", {
+            "answer_polarity": sorted(answer_polarity),
+            "evidence_polarity": sorted(evidence_polarity),
+        }
+
+    answer_terms = _tokens(answer)
+    evidence_terms = _tokens(cited_text)
+    overlap = answer_terms & evidence_terms
+    coverage = len(overlap) / len(answer_terms) if answer_terms else 0.0
+    details = {
+        "support_coverage": round(coverage, 4),
+        "answer_feature_count": len(answer_terms),
+        "overlap_feature_count": len(overlap),
+    }
+    if coverage < _MIN_GROUNDING_COVERAGE:
+        return False, "citation_support_below_threshold", details
+    return True, "citation_lexically_supported", details
 
 
 def _grounding_verifier(
@@ -75,11 +142,25 @@ def _grounding_verifier(
     if unknown:
         return "blocked", "citation_not_in_retrieval", {"unknown_citations": unknown}
 
-    answer_terms = _tokens(getattr(result, "response", ""))
+    empty_citations = [
+        citation
+        for citation in citations
+        if not str(evidence_items.get(citation, {}).get("content", "")).strip()
+    ]
+    if empty_citations:
+        return "blocked", "cited_evidence_empty", {"empty_citations": empty_citations}
     cited_text = " ".join(str(evidence_items.get(cid, {}).get("content", "")) for cid in citations)
-    if cited_text and not answer_terms.intersection(_tokens(cited_text)):
-        return "blocked", "citation_not_supporting_answer", {"citations": citations}
-    return "verified", "grounding_verified", {"citations": citations, "evidence_ids": evidence_ids}
+    supported, support_reason, support_evidence = _grounding_support(
+        getattr(result, "response", ""),
+        cited_text,
+    )
+    if not supported:
+        return "blocked", support_reason, {"citations": citations, **support_evidence}
+    return "verified", "grounding_verified", {
+        "citations": citations,
+        "evidence_ids": evidence_ids,
+        **support_evidence,
+    }
 
 
 def _task_verifier(result: Any) -> tuple[str, str, dict[str, Any]]:

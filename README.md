@@ -30,8 +30,10 @@ EchoForge 是个人学习、研究与求职展示项目，主要用于验证 Mul
   -> decide_retrieval
   -> retrieve（按需）
   -> execute_agent
-  -> persist_memory（仅成功后）
-  -> complete
+  -> verify_response
+       -> persist_memory -> complete（仅独立验证通过）
+       -> blocked（资料、引用或任务完成度不足）
+       -> failed（执行失败）
 ```
 
 执行图会记录每个节点的尝试次数、状态、耗时、选择的边和最终 `stop_reason`。Trace 不保存用户原始消息，只保留必要的结构化信息与内容摘要。
@@ -72,6 +74,34 @@ data/evidence/vector-retrieval-report.json
 检索首先执行一次向量查询。只有当 Top-1 分数或候选间隔不足时，才进入 Query Rewrite、多路召回和 LLM Rerank。高置信路径复用首次检索结果，避免重复向量查询；进入重排的候选最多保留 12 条。
 
 受控基准中的延迟来自注入的确定性等待，仅用于验证调用次数和分支行为，不等同于真实模型或线上端到端延迟。
+
+### 40 条 RAG Golden Set
+
+仓库另提供 40 条、8 类的版本化合成集，覆盖 normal、no-answer hard negative、conflict、expired、refusal、multi-hop、temporal 和 cross-session。数据拆为 20 条 calibration 与 20 条 holdout；阈值只在 calibration 上选择。
+
+当前确定性词法基线在 holdout 上的结果：
+
+| Metric | Result |
+| --- | ---: |
+| Full document Recall@3（未经过 answerability gate） | 1.000 |
+| Gated full Recall@3 | 0.625 |
+| No-answer rejection | 0.750 |
+| Evidence coverage | 1.000 |
+
+因此当前 readiness gate 明确为 `no-go`：结果说明“Top-K 找到相关文档”仍不等于“系统应该回答”。该集合是仓库作者待人工复核的合成基线，不代表真实用户分布或生产准确率。
+
+### Verifier 标注审计
+
+24 条确定性标注用例覆盖支持回答、数字不一致、肯否冲突、空证据、引用越界、部分支持、人工升级和执行失败。可执行 legacy 对照显示：
+
+| Metric | Legacy gate | Current gate |
+| --- | ---: | ---: |
+| Dangerous false accepts | 4 | 0 |
+| False blocks | 5 | 2 |
+| Accept precision | 0.4286 | 1.0000 |
+| Accept recall | 0.3750 | 0.7500 |
+
+改进来自中文 bigram 特征、答案数字必须出现在证据中、肯否极性冲突检测、空引用证据拒绝和最低 lexical support coverage。它仍只是保守的确定性门禁，不能替代语义 entailment 或人工评审。
 
 ## 快速开始
 
@@ -144,6 +174,12 @@ python scripts/benchmark_retrieval_policy.py
 
 # 离线 proposal 改进回放
 python scripts/evaluate_improvement.py
+
+# 40 条分层 RAG golden set（calibration / holdout）
+python scripts/evaluate_rag_golden.py
+
+# Verifier 标注审计与 legacy 对照
+python scripts/audit_response_verifier.py --fail-on-dangerous-false-accept
 ```
 
 运行测试：
@@ -169,7 +205,7 @@ tests/        自动化测试
 
 ## 当前边界
 
-- 检索评测集只有 4 篇文档和 8 条查询，属于校准集而非生产基准。
+- 真实本地向量检索报告仍只有 4 篇文档和 8 条查询；40 条 golden set 目前也只是仓库作者待人工复核的合成基线，二者都不是生产基准。
 - 自适应检索延迟实验使用确定性模拟等待，不能作为线上延迟提升结论。
 - 回放测试验证控制流与失败边界，不代表真实 LLM 回复质量。
 - 当前生产执行图已接入 Response Verifier，并形成 `completed / blocked / failed` 三类业务终止路径；真实模型质量仍需独立评测。
@@ -177,12 +213,13 @@ tests/        自动化测试
 - proposal 的人工批准只写入离线审计 ledger，不会自动发布或修改生产配置。
 - `/improvement/*` 是本地/受控离线 API；`APP_ENV=production` 时禁用，当前没有鉴权，也不提供跨进程 ProposalStore 锁，不能直接作为生产审批服务。
 - 当前已有工程说明、回放和检索报告，但企业知识协同 Demo 仍缺少成体系的 SOP、故障 Runbook、账务规则和领域评测集。
-- 项目当前更适合作为可运行、可评测的 Agent 工程原型，生产使用仍需补充多租户权限、数据治理、真实流量压测和在线效果监控。
+- `/metrics` 已提供请求级 completed/blocked/failed、分层 verifier、固定图节点耗时和持久化结果指标；仍缺真实流量基线、告警验收与 dashboard 截图。
+- 项目当前更适合作为可运行、可评测的 Agent 工程原型，生产使用仍需补充人工复核领域集、多租户权限、数据治理、真实流量压测和在线效果监控。
 
 ## 路线图
 
-- [#5 完善延迟观测、Verifier 与 Control Deck 证据链](https://github.com/HelicasECoode42/EchoForge/issues/5)
-- [#6 建立 RAG golden set 与可重复回归 Harness](https://github.com/HelicasECoode42/EchoForge/issues/6)
+- [#5 完善延迟观测、Verifier 与 Control Deck 证据链](https://github.com/HelicasECoode42/EchoForge/issues/5)：请求级指标与首版 verifier audit 已完成，仍需人工复核与 dashboard/replay 证据。
+- [#6 建立 RAG golden set 与可重复回归 Harness](https://github.com/HelicasECoode42/EchoForge/issues/6)：40 条合成 calibration/holdout 基线已完成，当前 gate 为 `no-go`，下一步是领域人工复核与真实向量链路复测。
 - [#11 实验条件触发的多步记忆检索](https://github.com/HelicasECoode42/EchoForge/issues/11)：在可信 Verifier 和 golden set 完成后开展。
 
 ## 进一步阅读
@@ -190,3 +227,4 @@ tests/        自动化测试
 - [执行图、Chunking 与检索评测](docs/graph-and-chunking-harness.md)
 - [路由预算、证据 Trace 与离线回放](docs/route-budget-and-replay.md)
 - [离线 proposal-based improvement 闭环](docs/offline-improvement.md)
+- [Golden set、Verifier 审计与请求级指标](docs/evaluation-gates.md)

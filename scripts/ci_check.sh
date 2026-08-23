@@ -49,4 +49,6 @@ fi
 "$PYTHON_BIN" scripts/replay_routes.py --output "$(mktemp -t echoforge-route-replay.XXXXXX.json)"
 "$PYTHON_BIN" scripts/replay_graph.py --output "$(mktemp -t echoforge-graph-replay.XXXXXX.json)"
 "$PYTHON_BIN" scripts/evaluate_chunking.py --output "$(mktemp -t echoforge-chunking.XXXXXX.json)"
+"$PYTHON_BIN" scripts/evaluate_rag_golden.py --output "$(mktemp -t echoforge-rag-golden.XXXXXX.json)"
+"$PYTHON_BIN" scripts/audit_response_verifier.py --fail-on-dangerous-false-accept --output "$(mktemp -t echoforge-verifier-audit.XXXXXX.json)"
 "$PYTHON_BIN" scripts/evaluate_improvement.py --output "$(mktemp -t echoforge-improvement.XXXXXX.json)"

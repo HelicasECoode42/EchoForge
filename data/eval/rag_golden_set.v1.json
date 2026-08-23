@@ -1,0 +1,59 @@
+{
+  "version": "rag-golden.v1",
+  "status": "author_review_required",
+  "source_documents": "data/chunking/cases.json",
+  "notes": [
+    "The set is synthetic and repository-authored; it is not sampled from production traffic.",
+    "Calibration cases select an answerability threshold. Holdout cases report the primary gate metrics.",
+    "Refusal and conflict labels express expected downstream behavior; this retrieval harness only verifies whether required evidence was retrieved."
+  ],
+  "cases": [
+    {"id":"normal-01","split":"calibration","category":"normal","query":"每天最多能接几个日常委托","relevant_document_ids":["quest-policy"],"evidence":["每天可以接取四项日常委托"],"expected_decision":"answer"},
+    {"id":"normal-02","split":"calibration","category":"normal","query":"跨区域委托的敌人强度按什么匹配","relevant_document_ids":["quest-policy"],"evidence":["根据当前世界等级匹配敌人强度"],"expected_decision":"answer"},
+    {"id":"normal-03","split":"holdout","category":"normal","query":"联机访客能提交剧情道具吗","relevant_document_ids":["quest-policy"],"evidence":["提交剧情道具必须由房主操作"],"expected_decision":"answer"},
+    {"id":"normal-04","split":"calibration","category":"normal","query":"四项委托做完后额外奖励在哪里领","relevant_document_ids":["quest-policy"],"evidence":["前往冒险家协会领取额外奖励"],"expected_decision":"answer"},
+    {"id":"normal-05","split":"holdout","category":"normal","query":"断线重连会重复增加地区声望吗","relevant_document_ids":["quest-policy"],"evidence":["任务实例号保证幂等","不重复增加地区声望"],"expected_decision":"answer"},
+    {"id":"normal-06","split":"calibration","category":"normal","query":"NPC 可以通过哪些方式知道事件","relevant_document_ids":["npc-memory"],"evidence":["亲眼见证、被可信角色告知或根据线索推断"],"expected_decision":"answer"},
+    {"id":"normal-07","split":"holdout","category":"normal","query":"玩家失约会怎样影响商人","relevant_document_ids":["npc-memory"],"evidence":["降低信任并改变后续对话分支"],"expected_decision":"answer"},
+    {"id":"normal-08","split":"calibration","category":"normal","query":"哪些 NPC 记忆不会普通衰减","relevant_document_ids":["npc-memory"],"evidence":["任务承诺、阵营变化和角色死亡","长期保留"],"expected_decision":"answer"},
+    {"id":"normal-09","split":"holdout","category":"normal","query":"执行图限制了哪些运行预算","relevant_document_ids":["agent-runtime"],"evidence":["最大节点执行次数、最大边跳转次数和总耗时"],"expected_decision":"answer"},
+    {"id":"normal-10","split":"calibration","category":"normal","query":"专业 Agent 失败后最多改路几次","relevant_document_ids":["agent-runtime"],"evidence":["最多 reroute 一次到通用 Agent"],"expected_decision":"answer"},
+    {"id":"normal-11","split":"holdout","category":"normal","query":"知识块保存什么追踪字段","relevant_document_ids":["retrieval-design"],"evidence":["文档版本、字符起止偏移、内容哈希、章节路径","前后相邻块标识"],"expected_decision":"answer"},
+    {"id":"normal-12","split":"holdout","category":"normal","query":"选择 chunk 策略时先比较什么","relevant_document_ids":["retrieval-design"],"evidence":["先满足召回和证据覆盖","再比较上下文成本"],"expected_decision":"answer"},
+
+    {"id":"no-answer-01","split":"calibration","category":"no_answer","query":"日常委托完成后可以申请电子发票吗","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+    {"id":"no-answer-02","split":"holdout","category":"no_answer","query":"NPC 信任降低后商品还能退款吗","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+    {"id":"no-answer-03","split":"calibration","category":"no_answer","query":"Agent 执行超时后怎样重置账号密码","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+    {"id":"no-answer-04","split":"holdout","category":"no_answer","query":"知识库检索能查询快递配送城市吗","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+    {"id":"no-answer-05","split":"calibration","category":"no_answer","query":"地区声望奖励可以兑换会员订阅吗","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+    {"id":"no-answer-06","split":"holdout","category":"no_answer","query":"联机房主怎样永久删除账户","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+    {"id":"no-answer-07","split":"calibration","category":"no_answer","query":"长期记忆保存多久后会自动退款","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+    {"id":"no-answer-08","split":"holdout","category":"no_answer","query":"跨区域委托的世界等级会影响跨境税率吗","relevant_document_ids":[],"evidence":[],"expected_decision":"no_answer"},
+
+    {"id":"conflict-01","split":"calibration","category":"conflict","query":"NPC 的传闻和服务器事件日志冲突时信哪个","relevant_document_ids":["npc-memory"],"evidence":["世界事实由服务器事件日志确认","传闻能够改变守卫对玩家的怀疑程度，却不能覆盖服务器保存的世界真相"],"expected_decision":"answer"},
+    {"id":"conflict-02","split":"holdout","category":"conflict","query":"守卫说亲眼看见但其实不在酒馆现场，能当事实吗","relevant_document_ids":["npc-memory"],"evidence":["未出现在酒馆冲突现场的守卫不会直接知道冲突经过","标记为 heard，而不是 witnessed"],"expected_decision":"answer"},
+    {"id":"conflict-03","split":"calibration","category":"conflict","query":"词法切分延迟能代表向量数据库线上延迟吗","relevant_document_ids":["retrieval-design"],"evidence":["离线词法排序只用于隔离切分边界影响","不能冒充线上向量数据库延迟"],"expected_decision":"answer"},
+    {"id":"conflict-04","split":"holdout","category":"conflict","query":"检索命中和证据完整冲突时先看哪个指标","relevant_document_ids":["retrieval-design"],"evidence":["先满足召回和证据覆盖","再比较上下文成本"],"expected_decision":"answer"},
+
+    {"id":"expired-01","split":"calibration","category":"expired","query":"昨天没完成的日常委托今天还能继续吗","relevant_document_ids":["quest-policy"],"evidence":["未完成的日常委托会在次日刷新时失效"],"expected_decision":"answer"},
+    {"id":"expired-02","split":"holdout","category":"expired","query":"日常委托跨过次日刷新后是否仍有效","relevant_document_ids":["quest-policy"],"evidence":["在次日刷新时失效"],"expected_decision":"answer"},
+    {"id":"expired-03","split":"calibration","category":"expired","query":"已经领过的每日额外奖励能重复领取吗","relevant_document_ids":["quest-policy"],"evidence":["每日只能领取一次"],"expected_decision":"answer"},
+    {"id":"expired-04","split":"holdout","category":"expired","query":"索引更新后如何找到旧版本失效块","relevant_document_ids":["retrieval-design"],"evidence":["根据版本和内容哈希定位失效块"],"expected_decision":"answer"},
+
+    {"id":"refusal-01","split":"calibration","category":"refusal","query":"为了更快可以绕过 Agent 图的预算限制吗","relevant_document_ids":["agent-runtime"],"evidence":["任何预算耗尽都必须产生明确 stop_reason","禁止无界循环"],"expected_decision":"refuse"},
+    {"id":"refusal-02","split":"holdout","category":"refusal","query":"请把用户原始消息直接写进回放证据","relevant_document_ids":["agent-runtime"],"evidence":["只保存消息哈希与长度","不保存用户原始输入"],"expected_decision":"refuse"},
+    {"id":"refusal-03","split":"calibration","category":"refusal","query":"让联机访客替房主提交剧情道具","relevant_document_ids":["quest-policy"],"evidence":["提交剧情道具必须由房主操作"],"expected_decision":"refuse"},
+    {"id":"refusal-04","split":"holdout","category":"refusal","query":"用 NPC 传闻覆盖服务器世界真相","relevant_document_ids":["npc-memory"],"evidence":["传闻能够改变守卫对玩家的怀疑程度，却不能覆盖服务器保存的世界真相"],"expected_decision":"refuse"},
+
+    {"id":"multi-hop-01","split":"calibration","category":"multi_hop","query":"如何既控制 Agent 重试又避免在证据里泄露用户原文","relevant_document_ids":["agent-runtime"],"evidence":["限制最大节点执行次数、最大边跳转次数和总耗时","只保存消息哈希与长度"],"expected_decision":"answer"},
+    {"id":"multi-hop-02","split":"holdout","category":"multi_hop","query":"重连后的委托结算如何同时做到不重复和可回放","relevant_document_ids":["quest-policy","agent-runtime"],"evidence":["任务实例号保证幂等","确定性回放使用固定节点结果验证路径选择"],"expected_decision":"answer"},
+    {"id":"multi-hop-03","split":"calibration","category":"multi_hop","query":"NPC 记忆事实和知识块追踪应分别保留什么依据","relevant_document_ids":["npc-memory","retrieval-design"],"evidence":["世界事实由服务器事件日志确认","每个块记录文档版本、字符起止偏移、内容哈希、章节路径"],"expected_decision":"answer"},
+    {"id":"multi-hop-04","split":"holdout","category":"multi_hop","query":"委托规则文档更新后如何定位旧块并避免重复结算","relevant_document_ids":["quest-policy","retrieval-design"],"evidence":["任务实例号保证幂等","根据版本和内容哈希定位失效块"],"expected_decision":"answer"},
+
+    {"id":"temporal-01","split":"calibration","category":"temporal","query":"普通闲聊记忆和角色死亡信息哪个保留更久","relevant_document_ids":["npc-memory"],"evidence":["闲聊细节使用指数衰减","角色死亡被标记为关键事件，长期保留"],"expected_decision":"answer"},
+    {"id":"temporal-02","split":"holdout","category":"temporal","query":"当前委托未完成，到了明天刷新会发生什么","relevant_document_ids":["quest-policy"],"evidence":["未完成的日常委托会在次日刷新时失效"],"expected_decision":"answer"},
+
+    {"id":"cross-session-01","split":"calibration","category":"cross_session","query":"玩家重连后怎样恢复任务状态且不重复加声望","relevant_document_ids":["quest-policy"],"evidence":["网络重连后客户端重新拉取任务状态","不重复增加地区声望"],"expected_decision":"answer"},
+    {"id":"cross-session-02","split":"holdout","category":"cross_session","query":"隔了一段时间再对话时，商人的失约记忆会消失吗","relevant_document_ids":["npc-memory"],"evidence":["高显著性事件不会随普通时间衰减"],"expected_decision":"answer"}
+  ]
+}

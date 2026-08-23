@@ -1,0 +1,986 @@
+{
+  "evaluation_scope": "synthetic_retrieval_and_answerability_baseline",
+  "dataset_version": "rag-golden.v1",
+  "dataset_status": "author_review_required",
+  "documents": 4,
+  "chunks": 9,
+  "cases": 40,
+  "top_k": 3,
+  "threshold": 0.464303,
+  "threshold_selection": {
+    "split": "calibration",
+    "objective": "balanced_accuracy",
+    "balanced_accuracy": 0.875
+  },
+  "calibration": {
+    "cases": 20,
+    "answerable_cases": 16,
+    "no_answer_cases": 4,
+    "answerability_accuracy": 0.8,
+    "answerable_detection_rate": 0.75,
+    "no_answer_rejection_rate": 1.0,
+    "full_document_recall_at_3": 0.9375,
+    "mean_document_recall_at_3": 0.9688,
+    "mrr": 1.0,
+    "evidence_coverage": 0.9688,
+    "gated_full_recall_at_3": 0.6875
+  },
+  "holdout": {
+    "cases": 20,
+    "answerable_cases": 16,
+    "no_answer_cases": 4,
+    "answerability_accuracy": 0.65,
+    "answerable_detection_rate": 0.625,
+    "no_answer_rejection_rate": 0.75,
+    "full_document_recall_at_3": 1.0,
+    "mean_document_recall_at_3": 1.0,
+    "mrr": 0.9688,
+    "evidence_coverage": 1.0,
+    "gated_full_recall_at_3": 0.625
+  },
+  "categories": {
+    "conflict": {
+      "cases": 4,
+      "answerable_cases": 4,
+      "no_answer_cases": 0,
+      "answerability_accuracy": 0.75,
+      "answerable_detection_rate": 0.75,
+      "no_answer_rejection_rate": null,
+      "full_document_recall_at_3": 1.0,
+      "mean_document_recall_at_3": 1.0,
+      "mrr": 1.0,
+      "evidence_coverage": 1.0,
+      "gated_full_recall_at_3": 0.75
+    },
+    "cross_session": {
+      "cases": 2,
+      "answerable_cases": 2,
+      "no_answer_cases": 0,
+      "answerability_accuracy": 1.0,
+      "answerable_detection_rate": 1.0,
+      "no_answer_rejection_rate": null,
+      "full_document_recall_at_3": 1.0,
+      "mean_document_recall_at_3": 1.0,
+      "mrr": 1.0,
+      "evidence_coverage": 1.0,
+      "gated_full_recall_at_3": 1.0
+    },
+    "expired": {
+      "cases": 4,
+      "answerable_cases": 4,
+      "no_answer_cases": 0,
+      "answerability_accuracy": 1.0,
+      "answerable_detection_rate": 1.0,
+      "no_answer_rejection_rate": null,
+      "full_document_recall_at_3": 1.0,
+      "mean_document_recall_at_3": 1.0,
+      "mrr": 1.0,
+      "evidence_coverage": 1.0,
+      "gated_full_recall_at_3": 1.0
+    },
+    "multi_hop": {
+      "cases": 4,
+      "answerable_cases": 4,
+      "no_answer_cases": 0,
+      "answerability_accuracy": 0.75,
+      "answerable_detection_rate": 0.75,
+      "no_answer_rejection_rate": null,
+      "full_document_recall_at_3": 0.75,
+      "mean_document_recall_at_3": 0.875,
+      "mrr": 1.0,
+      "evidence_coverage": 0.875,
+      "gated_full_recall_at_3": 0.5
+    },
+    "no_answer": {
+      "cases": 8,
+      "answerable_cases": 0,
+      "no_answer_cases": 8,
+      "answerability_accuracy": 0.875,
+      "answerable_detection_rate": null,
+      "no_answer_rejection_rate": 0.875,
+      "full_document_recall_at_3": null,
+      "mean_document_recall_at_3": null,
+      "mrr": null,
+      "evidence_coverage": null,
+      "gated_full_recall_at_3": null
+    },
+    "normal": {
+      "cases": 12,
+      "answerable_cases": 12,
+      "no_answer_cases": 0,
+      "answerability_accuracy": 0.5,
+      "answerable_detection_rate": 0.5,
+      "no_answer_rejection_rate": null,
+      "full_document_recall_at_3": 1.0,
+      "mean_document_recall_at_3": 1.0,
+      "mrr": 0.9583,
+      "evidence_coverage": 1.0,
+      "gated_full_recall_at_3": 0.5
+    },
+    "refusal": {
+      "cases": 4,
+      "answerable_cases": 4,
+      "no_answer_cases": 0,
+      "answerability_accuracy": 0.75,
+      "answerable_detection_rate": 0.75,
+      "no_answer_rejection_rate": null,
+      "full_document_recall_at_3": 1.0,
+      "mean_document_recall_at_3": 1.0,
+      "mrr": 1.0,
+      "evidence_coverage": 1.0,
+      "gated_full_recall_at_3": 0.75
+    },
+    "temporal": {
+      "cases": 2,
+      "answerable_cases": 2,
+      "no_answer_cases": 0,
+      "answerability_accuracy": 0.5,
+      "answerable_detection_rate": 0.5,
+      "no_answer_rejection_rate": null,
+      "full_document_recall_at_3": 1.0,
+      "mean_document_recall_at_3": 1.0,
+      "mrr": 1.0,
+      "evidence_coverage": 1.0,
+      "gated_full_recall_at_3": 0.5
+    }
+  },
+  "readiness_gate": {
+    "status": "no_go",
+    "passed": false,
+    "criteria": {
+      "holdout_gated_full_recall_at_3": 0.8,
+      "holdout_no_answer_rejection_rate": 0.8,
+      "holdout_evidence_coverage": 0.8
+    },
+    "boundary": "Passing this synthetic gate does not authorize production use. Human-reviewed domain cases, live retrieval, answer verification, latency, cost, and tail-risk audits remain required."
+  },
+  "cases_detail": [
+    {
+      "case_id": "normal-01",
+      "split": "calibration",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.353553,
+      "top_document_ids": [
+        "quest-policy",
+        "agent-runtime",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "normal-02",
+      "split": "calibration",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.707107,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "normal-03",
+      "split": "holdout",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.618718,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "normal-04",
+      "split": "calibration",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.441942,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "normal-05",
+      "split": "holdout",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.829561,
+      "top_document_ids": [
+        "quest-policy",
+        "retrieval-design",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "normal-06",
+      "split": "calibration",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.383131,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "retrieval-design"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "normal-07",
+      "split": "holdout",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.441942,
+      "top_document_ids": [
+        "npc-memory",
+        "quest-policy",
+        "retrieval-design"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "normal-08",
+      "split": "calibration",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.486664,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "normal-09",
+      "split": "holdout",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.485643,
+      "top_document_ids": [
+        "agent-runtime",
+        "agent-runtime",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "agent-runtime"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "normal-10",
+      "split": "calibration",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.639602,
+      "top_document_ids": [
+        "agent-runtime",
+        "agent-runtime",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "agent-runtime"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "normal-11",
+      "split": "holdout",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.1066,
+      "top_document_ids": [
+        "agent-runtime",
+        "retrieval-design",
+        "retrieval-design"
+      ],
+      "relevant_document_ids": [
+        "retrieval-design"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.5,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "normal-12",
+      "split": "holdout",
+      "category": "normal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.295599,
+      "top_document_ids": [
+        "retrieval-design",
+        "agent-runtime",
+        "agent-runtime"
+      ],
+      "relevant_document_ids": [
+        "retrieval-design"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-01",
+      "split": "calibration",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.441942,
+      "top_document_ids": [
+        "quest-policy",
+        "agent-runtime",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-02",
+      "split": "holdout",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.265165,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-03",
+      "split": "calibration",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.291386,
+      "top_document_ids": [
+        "agent-runtime",
+        "agent-runtime",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-04",
+      "split": "holdout",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.295599,
+      "top_document_ids": [
+        "retrieval-design",
+        "retrieval-design",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-05",
+      "split": "calibration",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.414781,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "agent-runtime"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-06",
+      "split": "holdout",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.176777,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-07",
+      "split": "calibration",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.324443,
+      "top_document_ids": [
+        "npc-memory",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "no-answer-08",
+      "split": "holdout",
+      "category": "no_answer",
+      "expected_decision": "no_answer",
+      "expected_retrievable": false,
+      "top_score": 0.618718,
+      "top_document_ids": [
+        "quest-policy",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 0.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "conflict-01",
+      "split": "calibration",
+      "category": "conflict",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.862044,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "conflict-02",
+      "split": "holdout",
+      "category": "conflict",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.574696,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "conflict-03",
+      "split": "calibration",
+      "category": "conflict",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.788263,
+      "top_document_ids": [
+        "retrieval-design",
+        "retrieval-design",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "retrieval-design"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "conflict-04",
+      "split": "holdout",
+      "category": "conflict",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.295599,
+      "top_document_ids": [
+        "retrieval-design",
+        "retrieval-design",
+        "agent-runtime"
+      ],
+      "relevant_document_ids": [
+        "retrieval-design"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "expired-01",
+      "split": "calibration",
+      "category": "expired",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.53033,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "agent-runtime"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "expired-02",
+      "split": "holdout",
+      "category": "expired",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.53033,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "agent-runtime"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "expired-03",
+      "split": "calibration",
+      "category": "expired",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.622171,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "expired-04",
+      "split": "holdout",
+      "category": "expired",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.552345,
+      "top_document_ids": [
+        "retrieval-design",
+        "retrieval-design",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "retrieval-design"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "refusal-01",
+      "split": "calibration",
+      "category": "refusal",
+      "expected_decision": "refuse",
+      "expected_retrievable": true,
+      "top_score": 0.388514,
+      "top_document_ids": [
+        "agent-runtime",
+        "agent-runtime",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "agent-runtime"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "refusal-02",
+      "split": "holdout",
+      "category": "refusal",
+      "expected_decision": "refuse",
+      "expected_retrievable": true,
+      "top_score": 0.639602,
+      "top_document_ids": [
+        "agent-runtime",
+        "agent-runtime",
+        "retrieval-design"
+      ],
+      "relevant_document_ids": [
+        "agent-runtime"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "refusal-03",
+      "split": "calibration",
+      "category": "refusal",
+      "expected_decision": "refuse",
+      "expected_retrievable": true,
+      "top_score": 0.707107,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "refusal-04",
+      "split": "holdout",
+      "category": "refusal",
+      "expected_decision": "refuse",
+      "expected_retrievable": true,
+      "top_score": 0.795495,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "multi-hop-01",
+      "split": "calibration",
+      "category": "multi_hop",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.533002,
+      "top_document_ids": [
+        "agent-runtime",
+        "agent-runtime",
+        "retrieval-design"
+      ],
+      "relevant_document_ids": [
+        "agent-runtime"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "multi-hop-02",
+      "split": "holdout",
+      "category": "multi_hop",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.622171,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "agent-runtime"
+      ],
+      "relevant_document_ids": [
+        "agent-runtime",
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "multi-hop-03",
+      "split": "calibration",
+      "category": "multi_hop",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.648886,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "npc-memory",
+        "retrieval-design"
+      ],
+      "document_recall_at_k": 0.5,
+      "full_document_recall_at_k": 0.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 0.5,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "multi-hop-04",
+      "split": "holdout",
+      "category": "multi_hop",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.414781,
+      "top_document_ids": [
+        "quest-policy",
+        "retrieval-design",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "quest-policy",
+        "retrieval-design"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "temporal-01",
+      "split": "calibration",
+      "category": "temporal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.973329,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "temporal-02",
+      "split": "holdout",
+      "category": "temporal",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.441942,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "agent-runtime"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": false
+    },
+    {
+      "case_id": "cross-session-01",
+      "split": "calibration",
+      "category": "cross_session",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 1.036952,
+      "top_document_ids": [
+        "quest-policy",
+        "quest-policy",
+        "npc-memory"
+      ],
+      "relevant_document_ids": [
+        "quest-policy"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    },
+    {
+      "case_id": "cross-session-02",
+      "split": "holdout",
+      "category": "cross_session",
+      "expected_decision": "answer",
+      "expected_retrievable": true,
+      "top_score": 0.53033,
+      "top_document_ids": [
+        "npc-memory",
+        "npc-memory",
+        "quest-policy"
+      ],
+      "relevant_document_ids": [
+        "npc-memory"
+      ],
+      "document_recall_at_k": 1.0,
+      "full_document_recall_at_k": 1.0,
+      "reciprocal_rank": 1.0,
+      "evidence_coverage": 1.0,
+      "predicted_retrievable": true
+    }
+  ]
+}

@@ -8,14 +8,7 @@ build/
 venv/
 node_modules/
 
-# Tests are kept locally for validation and are not versioned in this deployment tree.
-tests/
-!tests/
-tests/*
-!tests/test_improvement_domain.py
-!tests/test_improvement_harness.py
-!tests/test_proposal_store.py
-!tests/test_improvement_api.py
+# Tests are part of the public, reproducible evidence surface.
 
 # 环境变量（含敏感信息）
 .env
@@ -35,6 +28,8 @@ data/evidence/*
 !data/evidence/graph-replay-report.json
 !data/evidence/vector-retrieval-report.json
 !data/evidence/retrieval-policy-benchmark.json
+!data/evidence/rag-golden-report.json
+!data/evidence/verifier-audit-report.json
 logs/
 
 # IDE
